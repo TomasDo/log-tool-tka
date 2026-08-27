@@ -95,6 +95,43 @@ EXPECTED_BY_SPAN: dict[str, list[tuple[str, str]]] = {}
 for _c, _p, _display, _unit, _span in CUT_MAP:
     EXPECTED_BY_SPAN.setdefault(_span, []).append((_display, _unit))
 
+NAIL_PHRASES = (
+    "marker nail wighet open",
+    "marker nail wigdet",
+    "nail verify error",
+)
+OSTEO_PHRASES = (
+    "switch femur distal step",
+    "switch femur poster step",
+    "switch tibia step",
+)
+VERIFY_POINT_RE = re.compile(r"probe verify (femur|tibia) point\s+(\d+)", re.I)
+
+# Nested 截骨面验证: id, display, CUT_MAP span, cut log, verify log.
+PLANE_SPECS = (
+    {
+        "id": "femur_distal",
+        "name": "股骨远端验证",
+        "span": "股骨远端验证",
+        "cut_msg": "switch femur distal step",
+        "verify_msg": "switch femur distal check step",
+    },
+    {
+        "id": "tibia_proximal",
+        "name": "胫骨近端验证",
+        "span": "胫骨近端验证",
+        "cut_msg": "switch tibia step",
+        "verify_msg": "switch tibia check step",
+    },
+    {
+        "id": "femur_poster",
+        "name": "股骨后方验证",
+        "span": "股骨后方验证",
+        "cut_msg": "switch femur poster step",
+        "verify_msg": "switch femur poster check step",
+    },
+)
+
 ALL_LINES_LIMIT = 30_000
 HUGE_LINES = 80_000
 DEFAULT_WINDOW = 12_000
@@ -1101,6 +1138,318 @@ def compact_ticks(marks: list[str]) -> dict:
     return {"key": key, "anomaly": anomaly}
 
 
+def _in_ranges(line: int, ranges: list[tuple[int, int]]) -> bool:
+    return any(a <= line <= b for a, b in ranges)
+
+
+def uuid_ranges(events: list[dict], line_count: int) -> dict[str, list[tuple[int, int]]]:
+    """Line ranges owned by each plan uuid.
+
+    Startup clears uuid until the next load. Events from load A until load B
+    (or Exit / next Startup) belong to A. Same uuid across sessions is merged
+    by the caller.
+    """
+    out: dict[str, list[tuple[int, int]]] = {}
+    current: str | None = None
+    start: int | None = None
+
+    def flush(end: int) -> None:
+        nonlocal current, start
+        if current and start is not None and end >= start:
+            out.setdefault(current, []).append((start, end))
+        current = None
+        start = None
+
+    last_line = 0
+    for ev in events:
+        msg = _msg(ev)
+        line = int(ev.get("line") or 1)
+        last_line = line
+        if "Titan Application Startup" in msg:
+            flush(line - 1)
+            continue
+        if "Titan Application Exit" in msg:
+            flush(line)
+            continue
+        uid = _extract_uuid(msg)
+        if not uid:
+            continue
+        if current is None:
+            current = uid
+            start = line
+        elif uid != current:
+            flush(line - 1)
+            current = uid
+            start = line
+    flush(line_count or last_line)
+    return out
+
+
+def _step(
+    sid: str,
+    name: str,
+    ok: bool,
+    line: int | None = None,
+    missing_detail: str | None = None,
+    extra: dict | None = None,
+) -> dict:
+    rec: dict[str, Any] = {"id": sid, "name": name, "ok": bool(ok)}
+    if line:
+        rec["line"] = int(line)
+    if missing_detail:
+        rec["missing_detail"] = missing_detail
+    if extra:
+        rec.update(extra)
+    return rec
+
+
+def _first_phrase_line(evs: list[dict], phrases: tuple[str, ...]) -> int | None:
+    for ev in evs:
+        msg = _msg(ev)
+        if any(p in msg for p in phrases):
+            return int(ev.get("line") or 1)
+    return None
+
+
+def _verify_points(evs: list[dict], bone: str) -> tuple[list[int], int | None, int | None]:
+    """Point indices in first-seen order, first verify line, line of point 5.
+
+    Completeness is presence of index 5 — do not unique-count 1..5.
+    """
+    needle = f"probe verify {bone} point 5"
+    prefix = f"probe verify {bone} point"
+    seen: set[int] = set()
+    pts: list[int] = []
+    first_line: int | None = None
+    p5_line: int | None = None
+    for ev in evs:
+        msg = _msg(ev)
+        if prefix not in msg:
+            continue
+        line = int(ev.get("line") or 1)
+        if first_line is None:
+            first_line = line
+        if p5_line is None and needle in msg:
+            p5_line = line
+        m = VERIFY_POINT_RE.search(msg)
+        if m and m.group(1).lower() == bone:
+            pt = int(m.group(2))
+            if pt not in seen:
+                seen.add(pt)
+                pts.append(pt)
+    return pts, first_line, p5_line
+
+
+def _planning_gap(evs: list[dict]) -> tuple[bool, int | None, str | None]:
+    """截骨前 gap collect. Window: after cutter-before, until cutter-after or first osteotomy."""
+    seen_before = False
+    closed = False
+    ok = False
+    line: int | None = None
+    post_only = False
+    post_line: int | None = None
+    for ev in evs:
+        msg = _msg(ev)
+        ln = int(ev.get("line") or 1)
+        if "cutter before in gapmeasure" in msg:
+            seen_before = True
+        if "cutter after in gapmeasure" in msg:
+            closed = True
+        if seen_before and any(p in msg for p in OSTEO_PHRASES):
+            closed = True
+        if "start collect gap" in msg:
+            if seen_before and not closed:
+                ok = True
+                if line is None:
+                    line = ln
+            elif closed or (not seen_before):
+                post_only = True
+                if post_line is None:
+                    post_line = ln
+    if ok:
+        return True, line, None
+    if post_only:
+        return False, post_line, "仅截骨后采集"
+    return False, None, "未做"
+
+
+def _cut_planes(evs: list[dict], cut_items: list[dict], ranges: list[tuple[int, int]]) -> list[dict]:
+    collected: dict[str, dict[str, int]] = {p["span"]: {} for p in PLANE_SPECS}
+    for it in cut_items:
+        ln = int(it.get("line") or 0)
+        if not ln or not _in_ranges(ln, ranges):
+            continue
+        span = it.get("span")
+        lab = it.get("label")
+        if not span or not lab or span not in collected:
+            continue
+        if it.get("missing"):
+            continue
+        collected[span].setdefault(lab, ln)
+
+    planes = []
+    for spec in PLANE_SPECS:
+        span = spec["span"]
+        expected = EXPECTED_BY_SPAN.get(span) or []
+        have = collected.get(span) or {}
+        missing = [lab for lab, _u in expected if lab not in have]
+        cut_line = _first_phrase_line(evs, (spec["cut_msg"],))
+        verify_line = _first_phrase_line(evs, (spec["verify_msg"],))
+        first_collect = min(have.values()) if have else None
+        touched = bool(cut_line or verify_line or have)
+        ok = not missing
+        if first_collect:
+            jump = first_collect
+        elif verify_line:
+            jump = verify_line
+        elif cut_line:
+            jump = cut_line
+        else:
+            jump = None
+        if ok:
+            detail = None
+        elif touched:
+            detail = "未做完 · " + "、".join(missing) + " 未采集"
+        else:
+            detail = "未做"
+        rec = {
+            "id": spec["id"],
+            "name": spec["name"],
+            "ok": ok,
+            "missing": missing,
+            "touched": touched,
+        }
+        if jump:
+            rec["line"] = jump
+        if detail:
+            rec["missing_detail"] = detail
+        planes.append(rec)
+    return planes
+
+
+def _eval_required_steps(
+    evs: list[dict],
+    cut_items: list[dict],
+    ranges: list[tuple[int, int]],
+    fallback_line: int,
+) -> list[dict]:
+    steps: list[dict] = []
+
+    nail_line = _first_phrase_line(evs, NAIL_PHRASES)
+    steps.append(
+        _step(
+            "nail",
+            "标记钉采集",
+            bool(nail_line),
+            nail_line or fallback_line,
+            None if nail_line else "未做",
+        )
+    )
+
+    for bone, sid, name in (
+        ("femur", "femur_verify", "股骨验证"),
+        ("tibia", "tibia_verify", "胫骨验证"),
+    ):
+        pts, first_ln, p5_ln = _verify_points(evs, bone)
+        ok = p5_ln is not None
+        extra = {"points": pts} if pts else {}
+        if ok:
+            detail = None
+        elif pts:
+            detail = "未见点5（出现 " + ",".join(str(p) for p in pts) + "）"
+        else:
+            detail = "未做"
+        steps.append(
+            _step(
+                sid,
+                name,
+                ok,
+                p5_ln or first_ln or fallback_line,
+                detail,
+                extra,
+            )
+        )
+
+    gap_ok, gap_line, gap_detail = _planning_gap(evs)
+    steps.append(
+        _step(
+            "gap_plan",
+            "间隙采集（规划）",
+            gap_ok,
+            gap_line or fallback_line,
+            gap_detail,
+        )
+    )
+
+    planes = _cut_planes(evs, cut_items, ranges)
+    parent_ok = all(p["ok"] for p in planes) if planes else False
+    parent_line = next((p.get("line") for p in planes if not p["ok"] and p.get("line")), None)
+    if parent_ok:
+        parent_line = next((p.get("line") for p in planes if p.get("line")), None)
+    steps.append(
+        _step(
+            "cut_planes",
+            "截骨面参数验证",
+            parent_ok,
+            parent_line or fallback_line,
+            None if parent_ok else "未做完" if any(p.get("touched") for p in planes) else "未做",
+            {"planes": planes},
+        )
+    )
+    return steps
+
+
+def build_summaries(
+    events: list[dict],
+    cases: list[dict],
+    cut_items: list[dict],
+    line_count: int = 0,
+) -> list[dict]:
+    """One 方案汇总 card per plan uuid (skip 未打开方案)."""
+    owned = uuid_ranges(events, line_count)
+    order: list[str] = []
+    meta: dict[str, dict] = {}
+    for c in cases:
+        uid = c.get("uuid")
+        if not uid:
+            continue
+        if uid not in meta:
+            order.append(uid)
+            meta[uid] = {
+                "uuid": uid,
+                "case_n": int(c.get("n") or c.get("case_n") or len(order)),
+                "label": c.get("label") or "",
+                "color": c.get("color") or UNKNOWN_CASE_COLOR,
+                "start": int(c.get("start") or 1),
+                "end": int(c.get("end") or c.get("start") or 1),
+            }
+        else:
+            meta[uid]["start"] = min(meta[uid]["start"], int(c.get("start") or meta[uid]["start"]))
+            meta[uid]["end"] = max(meta[uid]["end"], int(c.get("end") or meta[uid]["end"]))
+
+    out: list[dict] = []
+    for uid in order:
+        m = meta[uid]
+        ranges = owned.get(uid) or [(m["start"], m["end"])]
+        evs = [e for e in events if _in_ranges(int(e.get("line") or 1), ranges)]
+        started = any("click start operation" in _msg(e) for e in evs)
+        rec = {
+            "uuid": uid,
+            "case_n": m["case_n"],
+            "label": m["label"],
+            "color": m["color"],
+            "start": m["start"],
+            "end": m["end"],
+            "started": started,
+            "steps": [],
+        }
+        if started:
+            rec["steps"] = _eval_required_steps(evs, cut_items, ranges, m["start"])
+        out.append(rec)
+    return out
+
+
+
 def build_nle(
     events: list[dict],
     raw_lines: list[str],
@@ -1117,6 +1466,7 @@ def build_nle(
     apply_cut_flags(marks, gather_missing_cut_flags(pages["l2"]))
     apply_cut_flags(marks, gather_missing_cut_flags(pages["l3"]))
     sc = build_sessions_and_cases(events, line_count, times)
+    summaries = build_summaries(events, sc["cases"], _cut_items, line_count)
     specials = _special_index(events, sc["markers"], line_count)
     lines, windowed, lo, hi = build_lines(
         raw_lines, marks, noise, specials, center=center, window=window
@@ -1138,4 +1488,5 @@ def build_nle(
         "lines_end": hi,
         "ticks": compact_ticks(marks),
         "tracks": tracks,
+        "summaries": summaries,
     }

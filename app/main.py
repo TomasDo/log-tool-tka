@@ -261,6 +261,7 @@ class Handler(BaseHTTPRequestHandler):
             "lines_end": nle["lines_end"],
             "ticks": nle["ticks"],
             "tracks": nle["tracks"],
+            "summaries": nle.get("summaries") or [],
         }
         self._json(200, payload)
 

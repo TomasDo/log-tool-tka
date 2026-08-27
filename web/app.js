@@ -251,6 +251,7 @@ async function loadTimeline(opts) {
     if (data.lines_windowed) bits.push(`终端窗口 ${data.lines_start}–${data.lines_end}`);
     $("tl-meta").textContent = bits.join(" · ");
     renderCounts(data.counts || {});
+    renderSummary(data.summaries || []);
     rebuildViewLines();
     renderLabels();
     fitZoom();
@@ -272,6 +273,105 @@ function renderCounts(c) {
   extra.push(`${state.data.line_count || 0} 行`);
   if (c.unmatched) extra.push(`未映射 ${c.unmatched}`);
   $("return-count").textContent = extra.join(" · ");
+}
+
+function renderSummary(summaries) {
+  const wrap = $("plan-summary-wrap");
+  const el = $("plan-summary");
+  if (!wrap || !el) return;
+  wrap.hidden = false;
+  const items = summaries || [];
+  el.replaceChildren();
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "ps-empty";
+    empty.textContent = "暂无手术方案";
+    el.append(empty);
+    return;
+  }
+  for (const s of items) el.append(summaryCard(s));
+}
+
+function summaryCard(s) {
+  const card = document.createElement("div");
+  card.className = "ps-card";
+  card.style.borderLeftColor = s.color || UNKNOWN_CASE_COLOR;
+  const title = document.createElement("div");
+  title.className = "ps-title";
+  title.textContent = s.label || `手术${s.case_n || ""}`;
+  const uid = document.createElement("div");
+  uid.className = "ps-uuid";
+  const full = s.uuid || "";
+  uid.textContent = full.slice(0, 8);
+  uid.title = full;
+  card.append(title, uid);
+  if (!s.started) {
+    const idle = document.createElement("div");
+    idle.className = "ps-idle";
+    idle.textContent = "未开始手术";
+    card.append(idle);
+  } else {
+    for (const st of s.steps || []) card.append(summaryStep(st));
+  }
+  card.addEventListener("click", () => setPlayhead(s.start || 1));
+  return card;
+}
+
+function jumpLine(ev, n) {
+  if (!n) return;
+  ev.stopPropagation();
+  setPlayhead(n);
+}
+
+function summaryStep(st) {
+  const wrap = document.createElement("div");
+  wrap.className = "ps-step " + (st.ok ? "ok" : "bad");
+  const hd = document.createElement("div");
+  hd.className = "ps-hd";
+  const mark = document.createElement("span");
+  mark.className = "ps-mark";
+  mark.textContent = st.ok ? "✓" : "×";
+  const body = document.createElement("div");
+  const name = document.createElement("span");
+  name.textContent = st.name;
+  body.append(name);
+  if (!st.ok && !(st.planes && st.planes.length)) {
+    const d = document.createElement("span");
+    d.className = "ps-detail";
+    d.textContent = " " + (st.missing_detail || "未做");
+    body.append(d);
+  }
+  if (st.points && st.points.length) {
+    hd.title = "点 " + st.points.join(",");
+  }
+  hd.append(mark, body);
+  wrap.append(hd);
+  if (st.line) hd.addEventListener("click", (ev) => jumpLine(ev, st.line));
+  const planes = st.planes || [];
+  if (planes.length) {
+    const box = document.createElement("div");
+    box.className = "ps-planes";
+    for (const p of planes) box.append(summaryPlane(p));
+    wrap.append(box);
+  }
+  return wrap;
+}
+
+function summaryPlane(p) {
+  const row = document.createElement("div");
+  row.className = "ps-plane " + (p.ok ? "ok" : "bad");
+  const mark = p.ok ? "✓ " : "× ";
+  let text = mark + p.name;
+  if (!p.ok) {
+    if (p.touched && p.missing && p.missing.length) {
+      text += " 未做完 · " + p.missing.join("、") + " 未采集";
+    } else {
+      text += " " + (p.missing_detail || "未做");
+    }
+  }
+  row.textContent = text;
+  if (p.line) row.addEventListener("click", (ev) => jumpLine(ev, p.line));
+  return row;
 }
 
 function renderLabels() {

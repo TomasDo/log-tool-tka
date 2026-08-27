@@ -272,6 +272,18 @@
 
 源码拼写 `dpeth`（depth）。
 
+## 必要步骤 / 方案汇总
+
+同一 `plan uuid` 的多次会话合成一台手术（与手术轨道相同）。方案汇总只评估点过 `click start operation` 的 uuid；已加载但未开始的显示「未开始手术」，不把每步标成未做。未打开方案（无 uuid）不出现在汇总。
+
+必要步骤（缺则为异常）：
+
+1. **标记钉采集**（术前）：该 uuid 行范围内出现 `marker nail wighet open`、`marker nail wigdet`、`nail verify error` 任一即可。07-16 一类日志常常只有 widget-open，没有 nail verify。
+2. **股骨验证**（股骨注册之后）：日志出现 `probe verify femur point 5` 即完成。不要对点 1..5 去重计数，不要显示 3/5。有索引 **5** 就算做完；没有点 5（或没有任何股骨验证行）为未做完。悬停可列出出现过的点号（1,2,3…），不加分数。
+3. **胫骨验证**：同样看 `probe verify tibia point 5`。
+4. **间隙采集（规划）**：截骨前 gap collect，**不是**截骨后。`start collect gap`（最好还有 `finish collect gap`）出现在 `cutter before in gapmeasure` 之后、且在 `cutter after in gapmeasure` / 首次截骨（`switch femur distal step` / tibia / poster）之前。只在截骨后采集仍算规划缺失。
+5. **截骨面参数验证**：截骨后三个面都要有 collect-check 读数（不是只进了验证步）。股骨远端（内/外侧截骨量、内外翻角、前倾角）、胫骨近端（内/外侧深度、后倾角、旋转角、内外翻角）、股骨后方（内/外侧、旋转角）。做了截骨或进了验证但缺参数 → 未做完并列出未采集名；已开始的手术即使没切没验也仍要求 → 未做。胫骨内外翻当前 Titan 从不打 `collect check tibia varus`，现有样本会显示未采集。
+
 ## 已定（写在上面的表里了）
 
 - 距离单位 mm；配准和点校验 **>1 mm** 算异常
@@ -280,6 +292,7 @@
 - 台车与手术同侧不显示，不同侧才标记
 - NDI 没连上算异常；KUKA 仅术中断开算异常
 - 台车示教、机械臂停止要记录时间
+- 方案汇总按 uuid 合并必要步骤；点 5 即验证完成（不计数）；规划间隙=截骨前；截骨面参数都要采集（含胫骨内外翻）
 
 ## 请你在本文件继续完善
 
