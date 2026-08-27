@@ -1,15 +1,15 @@
 const $ = (id) => document.getElementById(id);
 
 const LINE_H = 18;
-const RULER_H = 22;
+const RULER_H = 28;
 const MAX_SCALE = 2;
 const TRACKS = [
-  { key: "cases", name: "手术", h: 54 },
-  { key: "log", name: "日志", h: 26 },
-  { key: "l1", name: "一级", h: 30 },
-  { key: "l2", name: "二级", h: 26 },
-  { key: "l3", name: "三级", h: 22 },
-  { key: "device", name: "设备", h: 22 },
+  { key: "cases", name: "手术", h: 72 },
+  { key: "log", name: "日志", h: 36 },
+  { key: "l1", name: "一级", h: 42 },
+  { key: "l2", name: "二级", h: 38 },
+  { key: "l3", name: "三级", h: 34 },
+  { key: "device", name: "设备", h: 32 },
 ];
 
 const CASE_PALETTE = [
@@ -528,7 +528,7 @@ function drawSpans(ctx, spans, y, h, colorFn, trackKey) {
       ctx.rect(x + 4, y + 4, w - 8, h - 8);
       ctx.clip();
       ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.font = "11px ui-sans-serif, sans-serif";
+      ctx.font = "12px ui-sans-serif, sans-serif";
       ctx.fillText(ellipsize(ctx, s.label || "", w - 10), x + 6, y + h / 2 + 4);
       ctx.restore();
     }
@@ -568,10 +568,10 @@ function pickCaseLabel(ctx, s, maxW) {
 
 function drawCases(ctx, y, h, w) {
   const sessions = ((state.data && state.data.tracks) || {}).sessions || [];
-  const labelH = 15;
+  const labelH = 18;
   const barY = y + labelH + 1;
   const barH = Math.max(10, h - labelH - 6);
-  ctx.font = "10px ui-sans-serif, sans-serif";
+  ctx.font = "12px ui-sans-serif, sans-serif";
   for (let i = 0; i < sessions.length; i++) {
     const s = sessions[i];
     const x = xOfLine(s.start);
@@ -1045,7 +1045,7 @@ function bindSplit() {
     const move = (e) => {
       const dy = startY - e.clientY;
       nle.style.flex = "none";
-      nle.style.height = `${clamp(startH + dy, 220, 720)}px`;
+      nle.style.height = `${clamp(startH + dy, 280, 900)}px`;
       queueDraw();
     };
     const up = () => {

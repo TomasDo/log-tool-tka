@@ -143,7 +143,7 @@ h1 { font-size: 16px; margin: 0; font-weight: 650; }
 }
 
 #term-wrap {
-  flex: 0 0 160px; min-height: 72px;
+  flex: 0 0 110px; min-height: 64px;
   position: relative;
   border: 1px solid #1a2430;
   border-radius: 8px;
@@ -210,7 +210,7 @@ h1 { font-size: 16px; margin: 0; font-weight: 650; }
 
 #nle {
   flex: 1;
-  min-height: 280px;
+  min-height: 380px;
   height: auto;
   display: flex; flex-direction: column;
   background: #121a22;
@@ -220,28 +220,29 @@ h1 { font-size: 16px; margin: 0; font-weight: 650; }
   overflow: hidden;
 }
 #nle-tools {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 8px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; flex-shrink: 0;
   border-bottom: 1px solid var(--line);
 }
 #nle-tools button {
   background: var(--panel); color: var(--text);
-  border: 1px solid var(--line); border-radius: 5px;
-  padding: 2px 8px; cursor: pointer; font-size: 13px;
+  border: 1px solid var(--line); border-radius: 7px;
+  padding: 6px 14px; cursor: pointer; font-size: 15px; font-weight: 650;
+  min-width: 40px;
 }
 #nle-tools button:hover { border-color: var(--accent); }
-#nle-hint { margin-left: 8px; color: var(--muted); font-size: 11px; }
+#nle-hint { margin-left: 10px; color: var(--muted); font-size: 13px; }
 
 #nle-main {
   flex: 1; min-height: 0;
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr) 188px;
-  grid-template-rows: 16px minmax(0, 1fr);
+  grid-template-columns: 88px minmax(0, 1fr) 200px;
+  grid-template-rows: 22px minmax(0, 1fr);
 }
 #overview {
   grid-column: 2;
   grid-row: 1;
-  display: block; width: 100%; height: 16px;
+  display: block; width: 100%; height: 22px;
   cursor: pointer;
   background: #0c1218;
 }
@@ -255,8 +256,8 @@ h1 { font-size: 16px; margin: 0; font-weight: 650; }
   border-left: 1px solid var(--line);
   padding: 8px 10px 12px;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.4;
   user-select: none;
 }
 .lg-group { margin: 0 0 12px; }
@@ -284,13 +285,13 @@ h1 { font-size: 16px; margin: 0; font-weight: 650; }
   background: #101820;
   border-right: 1px solid var(--line);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.04em;
   user-select: none;
 }
 .nle-lab {
-  display: flex; align-items: center; padding: 0 8px;
+  display: flex; align-items: center; padding: 0 10px;
   border-bottom: 1px solid #1b2733;
 }
 .nle-lab.ruler { color: #6a7c90; font-weight: 600; }
