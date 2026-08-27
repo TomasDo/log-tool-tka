@@ -90,10 +90,14 @@ def match_l1(msg: str) -> tuple[str, str | None]:
 
 
 def match_l2(msg: str) -> tuple[str, str | None]:
-    if "finish collect gap" in msg:
-        return "exit", "采集间隙"
-    if "start collect gap" in msg:
-        return "enter", "采集间隙"
+    if "enter saw mode" in msg:
+        return "enter", "摆锯可视化"
+    if "exit saw mode" in msg:
+        return "exit", "摆锯可视化"
+    if "enter tibia draw line mode" in msg:
+        return "enter", "胫骨中线绘制"
+    if "exit tibia draw line mode" in msg:
+        return "exit", "胫骨中线绘制"
     if "cutter before in gapmeasure" in msg:
         return "enter", "截骨前"
     if "cutter after in gapmeasure" in msg:
@@ -122,14 +126,34 @@ def match_l2(msg: str) -> tuple[str, str | None]:
 
 
 def match_l3(msg: str) -> tuple[str, str | None]:
-    if "enter saw mode" in msg:
-        return "enter", "摆锯可视化"
-    if "exit saw mode" in msg:
-        return "exit", "摆锯可视化"
-    if "enter tibia draw line mode" in msg:
-        return "enter", "胫骨划线"
-    if "exit tibia draw line mode" in msg:
-        return "exit", "胫骨划线"
+    if "finish collect gap" in msg:
+        return "exit", "采集间隙"
+    if "start collect gap" in msg:
+        return "enter", "采集间隙"
+    if "marker nail wighet open" in msg or "marker nail wigdet" in msg:
+        return "enter", "标记钉采集"
+    if "ankle collect step" in msg or "hip collect step" in msg:
+        return "enter", "髋/踝中心"
+    return "none", None
+
+
+def match_device(msg: str) -> tuple[str, str | None]:
+    """Background / device-status events. Not surgical L1-L3."""
+    low = msg.lower()
+    if "write camera para" in low or "take over camera" in low:
+        return "tick", "相机"
+    if "robot maintenance" in low:
+        return "tick", "机械臂维护"
+    if "take over setting" in low:
+        return "tick", "设置"
+    if "take over emc" in low or low.startswith("emc ") or " emc " in f" {low} ":
+        return "tick", "EMC"
+    if "tracker" in low:
+        return "tick", "示踪器"
+    if "ndi" in low and (
+        "disconnect" in low or "not connected" in low or "reconnect" in low
+    ):
+        return "tick", "示踪器"
     return "none", None
 
 
@@ -209,7 +233,7 @@ def _close(open_span: _Open | None, end: int, times: list[str], bucket: list, pr
     if end < open_span.start:
         end = open_span.start
     extra = dict(open_span.extra)
-    extra.setdefault("level", {"l1": 1, "l2": 2, "l3": 3}.get(prefix))
+    extra.setdefault("level", {"l1": 1, "l2": 2, "l3": 3, "dev": 0}.get(prefix))
     bucket.append(
         _span(
             f"{prefix}-{len(bucket)}",
@@ -226,6 +250,8 @@ def build_page_tracks(events: list[dict], line_count: int, times: list[str]) -> 
     l1: list[dict] = []
     l2: list[dict] = []
     l3: list[dict] = []
+    device: list[dict] = []
+    l2_ticks: list[dict] = []
     o1: _Open | None = None
     o2: _Open | None = None
     o3: _Open | None = None
@@ -273,6 +299,12 @@ def build_page_tracks(events: list[dict], line_count: int, times: list[str]) -> 
                 _close(o2, line, times, l2, "l2")
                 o2 = None
                 close_l3(line)
+            elif lab2:
+                last = l2_ticks[-1] if l2_ticks else None
+                if not (last and last["label"] == lab2 and line - int(last["end"]) <= 2):
+                    l2_ticks.append(
+                        _span(f"l2-{len(l2)+len(l2_ticks)}", lab2, line, line, times, {"level": 2})
+                    )
         elif a2 == "enter" and lab2:
             if o2 and o2.label == lab2:
                 pass
@@ -293,8 +325,19 @@ def build_page_tracks(events: list[dict], line_count: int, times: list[str]) -> 
                 _close(o3, prev if o3 else prev, times, l3, "l3")
                 o3 = _Open(lab3, line)
 
+        ad, labd = match_device(msg)
+        if ad == "tick" and labd:
+            last = device[-1] if device else None
+            if last and last["label"] == labd and line - int(last["end"]) <= 2:
+                last["end"] = line
+            else:
+                device.append(
+                    _span(f"dev-{len(device)}", labd, line, line, times, {"level": 0})
+                )
+
     close_l1(line_count)
-    return {"l1": l1, "l2": l2, "l3": l3}
+    l2.extend(l2_ticks)
+    return {"l1": l1, "l2": l2, "l3": l3, "device": device}
 
 
 def _extract_version(msg: str) -> str | None:
@@ -617,12 +660,15 @@ def annotate_hlevel(events: list[dict]) -> None:
         a1, _ = match_l1(msg)
         a2, _ = match_l2(msg)
         a3, _ = match_l3(msg)
+        ad, _ = match_device(msg)
         if a1 == "enter" or a1 == "end_if":
             ev["hlevel"] = 1
         elif a2 != "none":
             ev["hlevel"] = 2
         elif a3 != "none":
             ev["hlevel"] = 3
+        elif ad != "none":
+            ev["hlevel"] = 0
         else:
             ev["hlevel"] = None
 
@@ -723,6 +769,7 @@ def build_nle(
         "l1": pages["l1"],
         "l2": pages["l2"],
         "l3": pages["l3"],
+        "device": pages.get("device") or [],
         "markers": sc["markers"],
     }
     return {

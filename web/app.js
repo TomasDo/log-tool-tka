@@ -9,6 +9,7 @@ const TRACKS = [
   { key: "l1", name: "一级", h: 30 },
   { key: "l2", name: "二级", h: 26 },
   { key: "l3", name: "三级", h: 22 },
+  { key: "device", name: "设备", h: 22 },
 ];
 
 const L1_COLOR = {
@@ -32,11 +33,21 @@ const L2_COLOR = {
   股骨后方验证: "#c8e8d0",
   截骨前: "#e09a3e",
   截骨后: "#d4893d",
-  采集间隙: "#f0c060",
+  摆锯可视化: "#e07070",
+  胫骨中线绘制: "#d4a0e0",
+  胫骨划线: "#d4a0e0",
 };
 const L3_COLOR = {
-  摆锯可视化: "#e07070",
-  胫骨划线: "#d4a0e0",
+  采集间隙: "#f0c060",
+  标记钉采集: "#c090e0",
+  "髋/踝中心": "#8a7ec8",
+};
+const DEV_COLOR = {
+  示踪器: "#6a8aa0",
+  相机: "#5a9bb8",
+  设置: "#7a8a9a",
+  机械臂维护: "#8a9a6a",
+  EMC: "#a07070",
 };
 
 const state = {
@@ -606,6 +617,9 @@ function drawNle() {
   drawSpans(ctx, tracks.l1, byKey.l1.y, byKey.l1.h, (s) => L1_COLOR[s.label], "l1");
   drawSpans(ctx, tracks.l2, byKey.l2.y, byKey.l2.h, (s) => L2_COLOR[s.label] || "#5aa6e8", "l2");
   drawSpans(ctx, tracks.l3, byKey.l3.y, byKey.l3.h, (s) => L3_COLOR[s.label] || "#e07070", "l3");
+  if (byKey.device) {
+    drawSpans(ctx, tracks.device, byKey.device.y, byKey.device.h, (s) => DEV_COLOR[s.label] || "#6a7c8f", "device");
+  }
 
   // exit markers: thin dim line
   for (const m of tracks.markers || []) {
