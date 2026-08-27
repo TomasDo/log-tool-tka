@@ -10,7 +10,7 @@
 > - 匹配方式：`contains`（默认，子串）| `prefix` | `regex`
 > - 类别：`lifecycle` 生命周期 / `page` 大页面跳转 / `step` 页内步骤 / `key` 关键信息 / `robot` 机器人动作 / `noise` 噪声 / `other`
 > - 时间轴：`show` 显示 | `hide` 默认隐藏
-> - 标注：`none` 普通 | `key` 重点（蓝/金） | `anomaly` 异常（红）
+> - 标注：`none` 普通 | `key` 重点（蓝/金） | `anomaly` 异常（红） | `pin` 特殊旗标（启动 / 版本）
 > - 阈值：可选。如 `>1` 表示日志里最后一个数字（单位 mm）大于 1 则升为异常，否则仍按「标注」列。空着=不做数值判断
 
 ## 日志格式（不要改，除非 Titan 换了 logger）
@@ -70,8 +70,8 @@
 
 | 日志匹配 | 匹配方式 | 软件步骤 | 类别 | 时间轴 | 标注 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Titan Application Startup | contains | 软件启动 | lifecycle | show | key | 软件启动 |
-| Titan vesrion | contains | 软件版本 | lifecycle | show | key | 源码拼写就是 vesrion |
+| Titan Application Startup | contains | 软件启动 | lifecycle | show | pin | 特殊标注：会话旗标，钉在时间轴标尺上 |
+| Titan vesrion | contains | 软件版本 | lifecycle | show | pin | 特殊标注：版本号钉在该次启动旗标旁（源码拼写 vesrion） |
 | Titan Application Exit | contains | 软件退出 | lifecycle | show | key | 软件退出 |
 | from login page switch to plan manage page | contains | 登录 → 方案管理 | page | show | key | 登录成功，进入方案管理 |
 | from plan manage page switch to home page | contains | 打开方案 | page | show | key | 打开方案成功，进入主窗口（home page是方案预览、准备、术中评估、导航这四个一级页面的主窗口） |

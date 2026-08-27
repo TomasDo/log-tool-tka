@@ -47,6 +47,11 @@ MARK_ALIASES = {
     "anomaly": "anomaly",
     "异常": "anomaly",
     "异常标注": "anomaly",
+    "pin": "pin",
+    "flag": "pin",
+    "标记": "pin",
+    "旗标": "pin",
+    "特殊": "pin",
 }
 
 CATEGORY_ALIASES = {

@@ -189,6 +189,7 @@ function renderTimeline(data) {
     const cls = ["event"];
     if (ev.mark === "key") cls.push("key");
     if (ev.mark === "anomaly") cls.push("anomaly");
+    if (ev.mark === "pin") cls.push("pin");
     if (ev.source === "noise" || ev.category === "noise") cls.push("noise");
     el.className = cls.join(" ");
 
