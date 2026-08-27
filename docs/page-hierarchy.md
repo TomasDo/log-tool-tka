@@ -40,9 +40,9 @@
 | --- | --- | --- | --- | --- |
 | 1 | 方案预览 | TopNavigation::planviewer | take over planviewer page | |
 | 1 | 准备 | TopNavigation::prepare | take over prepare page | 含工具标定、股骨/胫骨注册验证 |
-| 1 | 术中评估 | TopNavigation::gap_measure | take over gapmeasure page | |
+| 1 | 术中评估 | TopNavigation::gap_measure | take over gapmeasure page | 用于截骨前间隙采集评估和截骨后间隙采集评估 |
 | 1 | 导航 | TopNavigation::cutter_navigation | take over cutter navigation page **以及** robot motion take over | 顶栏同一级；机械臂截骨和摆锯都在这一页里 |
-| — | 机械臂维护 / 相机 / 设置 / 退出 / EMC | robot_maintenance, camera, setting, exit, emc | 日志很少 | ? 要不要上 L1 |
+| — | 机械臂维护 / 相机 / 设置 / 退出 / EMC | robot_maintenance, camera, setting, exit, emc | 日志很少 | 这些是独立于业务的后台日志，记录设备的运行状态，设置独立的轨道 |
 
 `click start operation`：方案预览点开始手术，进入准备。当作一级从「方案预览」切到「准备」。
 
@@ -84,9 +84,9 @@
 
 | 级别 | 显示名 | 日志匹配 | ? |
 | --- | --- | --- | --- |
-| 2? | 截骨前 | cutter before in gapmeasure page | 算二级还是三级 |
-| 2? | 截骨后 | cutter after in gapmeasure page | |
-| 2? | 采集间隙 | start/finish collect gap | |
+| 2? | 截骨前 | cutter before in gapmeasure page | 算二级 |
+| 2? | 截骨后 | cutter after in gapmeasure page | 算二级 |
+| 2? | 采集间隙 | start/finish collect gap | 算三级，功能和控件被截骨前和截骨后共用 |
 
 ---
 
@@ -96,12 +96,12 @@
 
 | 级别 | 显示名 | 源码 / 日志 | 说明 |
 | --- | --- | --- | --- |
-| 3 | 摆锯可视化 | enter/exit saw mode；take over cutter navigation 里的锯模式 | 导航页内功能，不是顶栏一级 |
-| 3 | 胫骨中线绘制 | enter/exit tibia draw line mode | |
-| 3 | 标记钉采集 | PrepareAdditionStep::marker_nail；FmeurReg's marker nail… | 日志弱 |
-| 3 | 髋/踝中心 | hip_or_ankle | 日志更弱 |
-| 3 | 示踪器 | tracker | ? |
-| 3 | 间隙曲线 / 实时模型 | switch show gap curve / realtime model | ? 三级还是只当视图 |
+| 3 | 摆锯可视化 | enter/exit saw mode；take over cutter navigation 里的锯模式 | 二级步骤，和没使用摆锯可视化的导航同级 |
+| 3 | 胫骨中线绘制 | enter/exit tibia draw line mode | 独立的二级步骤 |
+| 3 | 标记钉采集 | PrepareAdditionStep::marker_nail；FmeurReg's marker nail… | 三级步骤 |
+| 3 | 髋/踝中心 | hip_or_ankle | 三级步骤 |
+| 3 | 示踪器 | tracker | 这些是独立于业务的后台日志，记录设备的运行状态，设置独立的轨道 |
+| 3 | 间隙曲线 / 实时模型 | switch show gap curve / realtime model | 只当视图，被截骨前和截骨后共用 |
 
 ---
 
