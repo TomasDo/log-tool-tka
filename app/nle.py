@@ -527,15 +527,13 @@ def build_sessions_and_cases(events: list[dict], line_count: int, times: list[st
             nth = case_order.index(uid) + 1
             extra["case_n"] = nth
             extra["case_label"] = _case_label(nth, uid, meta)
-            label = f"{extra['case_label']} · 第{n}次启动"
-            if n > 1:
-                label = f"{extra['case_label']} · #{n} 重启"
+            extra["color"] = CASE_PALETTE[(nth - 1) % len(CASE_PALETTE)]
+            label = extra["case_label"] if n <= 1 else f"#{n} 重启"
         else:
             extra["case_n"] = 0
             extra["case_label"] = "未打开方案"
+            extra["color"] = UNKNOWN_CASE_COLOR
             label = "未打开方案"
-            if n == 0 and not uid:
-                label = "未打开方案"
         sessions_out.append(
             _span(f"ses-{idx}", label, ses["start"], ses["end"], times, extra)
         )

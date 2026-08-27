@@ -4,7 +4,7 @@ const LINE_H = 18;
 const RULER_H = 22;
 const MAX_SCALE = 2;
 const TRACKS = [
-  { key: "cases", name: "手术", h: 36 },
+  { key: "cases", name: "手术", h: 42 },
   { key: "log", name: "日志", h: 26 },
   { key: "l1", name: "一级", h: 30 },
   { key: "l2", name: "二级", h: 26 },
@@ -107,6 +107,9 @@ function renderList() {
   for (const log of state.logs) {
     const li = document.createElement("li");
     if (state.selected === log.id) li.classList.add("active");
+    li.setAttribute("role", "button");
+    li.tabIndex = 0;
+    li.setAttribute("aria-pressed", state.selected === log.id ? "true" : "false");
     const counts = log.counts || {};
     li.innerHTML = `
       <button class="del" data-del="${log.id}" title="删除">删除</button>
@@ -133,6 +136,13 @@ function renderList() {
     li.addEventListener("click", (ev) => {
       if (ev.target.closest("[data-del]")) return;
       selectLog(log.id);
+    });
+    li.addEventListener("keydown", (ev) => {
+      if (ev.target.closest("[data-del]")) return;
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        selectLog(log.id);
+      }
     });
     li.querySelector("[data-del]").addEventListener("click", async (ev) => {
       ev.stopPropagation();
@@ -417,6 +427,21 @@ function drawTicks(ctx, y, h, w) {
   }
 }
 
+function ellipsize(ctx, text, maxW) {
+  const t = text || "";
+  if (maxW <= 0) return "";
+  if (ctx.measureText(t).width <= maxW) return t;
+  const ell = "…";
+  let lo = 0;
+  let hi = t.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(t.slice(0, mid) + ell).width <= maxW) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo ? t.slice(0, lo) + ell : "";
+}
+
 function drawSpans(ctx, spans, y, h, colorFn, trackKey) {
   for (const s of spans || []) {
     const { x, w } = spanRect(s);
@@ -434,7 +459,7 @@ function drawSpans(ctx, spans, y, h, colorFn, trackKey) {
       ctx.clip();
       ctx.fillStyle = "rgba(255,255,255,0.92)";
       ctx.font = "11px ui-sans-serif, sans-serif";
-      ctx.fillText(s.label || "", x + 6, y + h / 2 + 4);
+      ctx.fillText(ellipsize(ctx, s.label || "", w - 10), x + 6, y + h / 2 + 4);
       ctx.restore();
     }
     state.hits.push({
@@ -450,28 +475,41 @@ function drawSpans(ctx, spans, y, h, colorFn, trackKey) {
 }
 
 function drawCases(ctx, y, h, w) {
-  const tracks = (state.data && state.data.tracks) || {};
-  const cases = tracks.cases || [];
-  const sessions = tracks.sessions || [];
-  drawSpans(ctx, cases, y, h, (s) => s.color || "#4e79a7", "cases");
-  ctx.save();
-  ctx.strokeStyle = "rgba(255,255,255,0.35)";
-  ctx.lineWidth = 1;
-  for (const ses of sessions) {
-    if (!ses.restart && ses.n === 1) continue;
-    const x = xOfLine(ses.start);
-    if (x < -2 || x > w + 2) continue;
-    ctx.beginPath();
-    ctx.moveTo(x, y + 3);
-    ctx.lineTo(x, y + h - 3);
-    ctx.stroke();
-    if (ses.restart && state.scale * (ses.end - ses.start + 1) > 36) {
-      ctx.fillStyle = "rgba(255,255,255,0.9)";
-      ctx.font = "10px ui-sans-serif, sans-serif";
-      ctx.fillText(`#${ses.n} 重启`, x + 4, y + h - 6);
+  const sessions = ((state.data && state.data.tracks) || {}).sessions || [];
+  const gap = 3;
+  ctx.font = "11px ui-sans-serif, sans-serif";
+  for (const s of sessions) {
+    const { x, w: rawW } = spanRect(s);
+    const barW = Math.max(2, rawW - gap);
+    if (x + barW < 0 || x > w) continue;
+    const col = s.color || (s.uuid ? "#4e79a7" : "#5a6570");
+    ctx.fillStyle = col;
+    roundRect(ctx, x, y + 5, barW, h - 10, 3);
+    ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.fillRect(x, y + 5, Math.min(2, barW), h - 10);
+    const label = s.restart
+      ? `#${s.n} 重启`
+      : s.case_label || s.label || "未打开方案";
+    if (barW >= 22) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x + 4, y + 5, barW - 8, h - 10);
+      ctx.clip();
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.fillText(ellipsize(ctx, label, barW - 10), x + 6, y + h / 2 + 4);
+      ctx.restore();
     }
+    state.hits.push({
+      type: "span",
+      track: "cases",
+      span: s,
+      x,
+      y: y + 5,
+      w: barW,
+      h: h - 10,
+    });
   }
-  ctx.restore();
 }
 
 function drawRuler(ctx, w) {
@@ -557,9 +595,7 @@ function drawNle() {
     ctx.stroke();
     ctx.setLineDash([]);
     const r1 = drawFlag(ctx, x, 2, pin.version);
-    const r2 = drawFlag(ctx, x, byKey.cases.y + 3, pin.version);
     state.hits.push({ type: "pin", pin, ...r1 });
-    state.hits.push({ type: "pin", pin, ...r2 });
   }
 
   drawPlayhead(ctx, h);

@@ -53,6 +53,11 @@ class Store:
         return self.logs_dir / item["stored_name"]
 
     def add(self, original_name: str, content: bytes, meta: dict) -> dict:
+        size = meta.get("size") or len(content)
+        data = self._load()
+        for rec in data.get("logs") or []:
+            if rec.get("original_name") == original_name and rec.get("size") == size:
+                return rec
         log_id = uuid.uuid4().hex
         suffix = Path(original_name).suffix or ".txt"
         stored_name = f"{log_id}{suffix}"
@@ -62,7 +67,7 @@ class Store:
             "id": log_id,
             "original_name": original_name,
             "stored_name": stored_name,
-            "size": meta.get("size") or dest.stat().st_size,
+            "size": size,
             "line_count": meta.get("line_count", 0),
             "parsed_count": meta.get("parsed", 0),
             "date": meta.get("date"),
@@ -78,7 +83,6 @@ class Store:
             },
             "imported_at": _now(),
         }
-        data = self._load()
         data.setdefault("logs", []).append(rec)
         self._save(data)
         return rec

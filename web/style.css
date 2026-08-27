@@ -74,6 +74,7 @@ h1 { font-size: 16px; margin: 0; font-weight: 650; }
 }
 #file-list li:hover { border-color: #3a516c; }
 #file-list li.active { border-color: var(--accent); background: var(--panel-2); }
+#file-list li:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .fname { font-size: 13px; font-weight: 600; word-break: break-all; }
 .fmeta { color: var(--muted); font-size: 11px; margin-top: 4px; display: flex; justify-content: space-between; gap: 8px; }
 .badges { display: flex; gap: 6px; margin-top: 6px; }
