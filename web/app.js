@@ -1,9 +1,58 @@
 const $ = (id) => document.getElementById(id);
 
+const LINE_H = 18;
+const RULER_H = 22;
+const MAX_SCALE = 2;
+const TRACKS = [
+  { key: "cases", name: "手术", h: 36 },
+  { key: "log", name: "日志", h: 26 },
+  { key: "l1", name: "一级", h: 30 },
+  { key: "l2", name: "二级", h: 26 },
+  { key: "l3", name: "三级", h: 22 },
+];
+
+const L1_COLOR = {
+  登录: "#6b7c8f",
+  方案管理: "#2aa198",
+  方案预览: "#9b7ed9",
+  准备: "#3d8fd4",
+  术中评估: "#e09a3e",
+  导航: "#3caf7a",
+};
+const L2_COLOR = {
+  股骨注册: "#5aa6e8",
+  股骨验证: "#7ec0f0",
+  胫骨注册: "#5bc4b0",
+  胫骨验证: "#8fd9cc",
+  股骨远端截骨: "#4caf7a",
+  胫骨近端截骨: "#6bc48a",
+  股骨四合一: "#88d4a0",
+  股骨远端验证: "#a8d4b8",
+  胫骨近端验证: "#b8e0c4",
+  股骨后方验证: "#c8e8d0",
+  截骨前: "#e09a3e",
+  截骨后: "#d4893d",
+  采集间隙: "#f0c060",
+};
+const L3_COLOR = {
+  摆锯可视化: "#e07070",
+  胫骨划线: "#d4a0e0",
+};
+
 const state = {
   logs: [],
   selected: null,
-  timeline: null,
+  data: null,
+  playhead: 1,
+  follow: true,
+  scale: 1,
+  scrollX: 0,
+  viewLines: [],
+  lineIndex: new Map(),
+  progScroll: false,
+  hits: [],
+  drawQueued: false,
+  drag: null,
 };
 
 function fmtRange(log) {
@@ -18,6 +67,10 @@ function fmtSize(n) {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function clamp(v, a, b) {
+  return Math.max(a, Math.min(b, v));
 }
 
 async function api(path, opts) {
@@ -87,6 +140,7 @@ function renderList() {
       await api(`/api/logs/${log.id}`, { method: "DELETE" });
       if (state.selected === log.id) {
         state.selected = null;
+        state.data = null;
         $("timeline-wrap").hidden = true;
         $("empty-state").hidden = false;
       }
@@ -102,21 +156,51 @@ async function selectLog(id) {
   await loadTimeline();
 }
 
-async function loadTimeline() {
+function lineVisible(ln) {
+  if ($("tog-all").checked) return true;
+  if (ln.special === "startup" || ln.special === "version") return true;
+  if (ln.mark === "key" || ln.mark === "anomaly") return true;
+  if ($("tog-noise").checked && ln.noise) return true;
+  return false;
+}
+
+function rebuildViewLines() {
+  const lines = (state.data && state.data.lines) || [];
+  state.viewLines = lines.filter(lineVisible);
+  state.lineIndex = new Map();
+  state.viewLines.forEach((ln, i) => state.lineIndex.set(ln.n, i));
+}
+
+async function loadTimeline(opts) {
   if (!state.selected) return;
-  const noise = $("tog-noise").checked ? "1" : "0";
-  const all = $("tog-all").checked ? "1" : "0";
   $("empty-state").hidden = true;
   $("timeline-wrap").hidden = false;
-  $("timeline").innerHTML = `<p class="hint">加载中…</p>`;
+  const term = $("term");
+  if (!state.data) term.innerHTML = `<p class="hint" style="padding:12px">加载中…</p>`;
+  const qs = new URLSearchParams();
+  if (opts && opts.center) qs.set("center", String(opts.center));
+  if (opts && opts.window) qs.set("window", String(opts.window));
   try {
-    const data = await api(
-      `/api/logs/${state.selected}/timeline?show_noise=${noise}&show_all=${all}`
-    );
-    state.timeline = data;
-    renderTimeline(data);
+    const data = await api(`/api/logs/${state.selected}/timeline?${qs.toString()}`);
+    state.data = data;
+    state.playhead = opts && opts.center ? opts.center : 1;
+    state.follow = true;
+    $("btn-follow").hidden = true;
+    $("tl-title").textContent = data.name || "";
+    const bits = [fmtRange(data)];
+    if (data.date_source === "mtime") bits.push("日期取自文件时间");
+    if (data.truncated) bits.push("事件已截断");
+    if (data.lines_windowed) bits.push(`终端窗口 ${data.lines_start}–${data.lines_end}`);
+    $("tl-meta").textContent = bits.join(" · ");
+    renderCounts(data.counts || {});
+    rebuildViewLines();
+    renderLabels();
+    fitZoom();
+    renderTerm();
+    scrollTermToPlayhead();
+    queueDraw();
   } catch (e) {
-    $("timeline").innerHTML = `<p class="err">${e.message}</p>`;
+    term.innerHTML = `<p class="err" style="padding:12px">${e.message}</p>`;
   }
 }
 
@@ -127,116 +211,733 @@ function renderCounts(c) {
     <div class="count a"><b>${c.anomaly || 0}</b><span>异常</span></div>
     <div class="count"><b>${c.hidden_noise || 0}</b><span>噪声</span></div>`;
   const extra = [];
-  extra.push(`本页 ${c.returned || 0} 条`);
+  extra.push(`${state.data.line_count || 0} 行`);
   if (c.unmatched) extra.push(`未映射 ${c.unmatched}`);
   $("return-count").textContent = extra.join(" · ");
 }
 
-function renderTimeline(data) {
-  $("tl-title").textContent = data.name || "";
-  const bits = [fmtRange(data)];
-  if (data.date_source === "mtime") bits.push("日期取自文件时间");
-  if (data.truncated) bits.push("结果已截断");
-  $("tl-meta").textContent = bits.join(" · ");
-  renderCounts(data.counts || {});
-
-  const box = $("timeline");
-  box.innerHTML = "";
-  const events = data.events || [];
-  if (!events.length) {
-    box.innerHTML = `<p class="hint">当前过滤条件下没有事件。试试「显示噪声」或「显示全部」。</p>`;
-    return;
-  }
-
-  let lastGroup = null;
-  let lastPage = null;
-  const frag = document.createDocumentFragment();
-  for (const ev of events) {
-    if (ev.session === "startup" || ev.session === "exit") {
-      const s = document.createElement("div");
-      s.className = `session ${ev.session}`;
-      s.textContent = ev.session === "startup" ? "会话开始 · 软件启动" : "会话结束 · 软件退出";
-      frag.appendChild(s);
-      lastGroup = ev.group || lastGroup;
-    }
-
-    const pageLabel = ev.page || "";
-    if (ev.category === "page" || (pageLabel && pageLabel !== lastPage)) {
-      const label = pageLabel || ev.step || ev.group;
-      if (label) {
-        const ph = document.createElement("div");
-        ph.className = "page-h";
-        ph.textContent = label;
-        frag.appendChild(ph);
-      }
-      lastPage = pageLabel || lastPage;
-      if (ev.group && ev.group === (pageLabel || ev.step)) lastGroup = ev.group;
-    } else if (pageLabel) {
-      lastPage = pageLabel;
-    }
-
-    if (ev.group && ev.group !== lastGroup && ev.mark !== "none") {
-      const g = document.createElement("div");
-      g.className = "group-h";
-      g.textContent = ev.group;
-      frag.appendChild(g);
-      lastGroup = ev.group;
-    } else if (ev.group) {
-      lastGroup = ev.group;
-    }
-
-    const el = document.createElement("article");
-    const cls = ["event"];
-    if (ev.mark === "key") cls.push("key");
-    if (ev.mark === "anomaly") cls.push("anomaly");
-    if (ev.mark === "pin") cls.push("pin");
-    if (ev.source === "noise" || ev.category === "noise") cls.push("noise");
-    el.className = cls.join(" ");
-
-    const lv = ev.level ? `<span class="etag lv-${ev.level}">${ev.level}</span>` : "";
-    const step = ev.step ? `<span class="estep">${escapeHtml(ev.step)}</span>` : "";
-    const mm =
-      ev.value_mm != null && ev.value_mm !== ""
-        ? `<span class="emm">${Number(ev.value_mm).toFixed(2)} mm</span>`
-        : "";
-    el.innerHTML = `
-      <div class="erow">
-        <span class="etime">${ev.time || "--:--:--"}</span>
-        ${step}
-        ${mm}
-        <span class="emsg"></span>
-        ${lv}
-      </div>
-      <div class="detail"></div>`;
-    el.querySelector(".emsg").textContent = ev.message || (ev.block ? "(非标准块)" : "");
-    const detail = el.querySelector(".detail");
-    const meta = [
-      ev.date ? `日期 ${ev.date}` : null,
-      ev.level ? `级别 ${ev.level}` : "非标准行",
-      ev.thread ? `线程 ${ev.thread}` : null,
-      `行 ${ev.line}${ev.line_end && ev.line_end !== ev.line ? "–" + ev.line_end : ""}`,
-      ev.category ? `类别 ${ev.category}` : null,
-      ev.source ? `规则 ${ev.source}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    const pre = document.createElement("pre");
-    pre.textContent = ev.raw || ev.message || "";
-    detail.appendChild(document.createTextNode(meta));
-    detail.appendChild(pre);
-
-    el.addEventListener("click", () => el.classList.toggle("open"));
-    frag.appendChild(el);
-  }
-  box.appendChild(frag);
+function renderLabels() {
+  const labs = $("nle-labels");
+  const rows = [{ name: "行号", h: RULER_H, ruler: true }, ...TRACKS];
+  labs.innerHTML = rows
+    .map(
+      (r) =>
+        `<div class="nle-lab${r.ruler ? " ruler" : ""}" style="height:${r.h}px">${r.name}</div>`
+    )
+    .join("");
 }
 
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+function lineCount() {
+  return (state.data && state.data.line_count) || 1;
+}
+
+function canvasSize(cv) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth;
+  const h = cv.clientHeight;
+  const pw = Math.max(1, Math.floor(w * dpr));
+  const ph = Math.max(1, Math.floor(h * dpr));
+  if (cv.width !== pw || cv.height !== ph) {
+    cv.width = pw;
+    cv.height = ph;
+  }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { w, h, ctx };
+}
+
+function minScale() {
+  const cv = $("nle-canvas");
+  const w = cv.clientWidth || 800;
+  return Math.min(MAX_SCALE, w / Math.max(1, lineCount()));
+}
+
+function maxScroll() {
+  const cv = $("nle-canvas");
+  const w = cv.clientWidth || 800;
+  return Math.max(0, lineCount() * state.scale - w);
+}
+
+function fitZoom() {
+  state.scale = minScale();
+  state.scrollX = 0;
+}
+
+function xOfLine(n) {
+  return (n - 1) * state.scale - state.scrollX;
+}
+
+function lineAtX(x) {
+  return clamp(Math.floor((x + state.scrollX) / state.scale) + 1, 1, lineCount());
+}
+
+function trackLayout() {
+  let y = RULER_H;
+  return TRACKS.map((t) => {
+    const rec = { key: t.key, name: t.name, h: t.h, y };
+    y += t.h;
+    return rec;
+  });
+}
+
+function spanRect(span) {
+  const x = xOfLine(span.start);
+  const w = Math.max(2, (span.end - span.start + 1) * state.scale);
+  return { x, w };
+}
+
+function uniqueStartups(markers) {
+  const out = [];
+  for (const m of markers || []) {
+    if (m.kind !== "startup") continue;
+    const last = out[out.length - 1];
+    if (last && m.line - last.line <= 8) {
+      if (m.version && !last.version) {
+        last.version = m.version;
+        last.version_line = m.version_line;
+      }
+      continue;
+    }
+    out.push({ ...m });
+  }
+  for (const s of (state.data.tracks && state.data.tracks.sessions) || []) {
+    if (!s.version) continue;
+    const pin = out.find((p) => Math.abs(p.line - s.start) <= 8);
+    if (pin && !pin.version) {
+      pin.version = s.version;
+      pin.version_line = s.version_line;
+    }
+  }
+  return out;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, h / 2, w / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+function drawFlag(ctx, x, y, version) {
+  ctx.save();
+  ctx.fillStyle = "#6ec89a";
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + 11, y + 6);
+  ctx.lineTo(x, y + 12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#1a3a2a";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  if (version) {
+    ctx.font = "10px ui-sans-serif, sans-serif";
+    const tw = Math.ceil(ctx.measureText(version).width) + 8;
+    let bx = x + 13;
+    const vw = $("nle-canvas").clientWidth;
+    if (bx + tw > vw - 4) bx = x - tw - 4;
+    ctx.fillStyle = "#163328";
+    roundRect(ctx, bx, y, tw, 13, 3);
+    ctx.fill();
+    ctx.strokeStyle = "#6ec89a";
+    ctx.stroke();
+    ctx.fillStyle = "#b8f0d0";
+    ctx.fillText(version, bx + 4, y + 10);
+    ctx.restore();
+    return { x: Math.min(x, bx), y, w: Math.abs(bx - x) + tw + 11, h: 13 };
+  }
+  ctx.restore();
+  return { x, y, w: 12, h: 12 };
+}
+
+function drawPlayhead(ctx, h) {
+  const x = xOfLine(state.playhead) + state.scale * 0.5;
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, h);
+  ctx.stroke();
+  ctx.strokeStyle = "#ff4d4d";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = "#ff4d4d";
+  ctx.beginPath();
+  ctx.moveTo(x - 6, 0);
+  ctx.lineTo(x + 6, 0);
+  ctx.lineTo(x, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawTicks(ctx, y, h, w) {
+  const n = lineCount();
+  const ticks = (state.data && state.data.ticks) || { key: [], anomaly: [] };
+  const keySet = new Set(ticks.key || []);
+  const anomSet = new Set(ticks.anomaly || []);
+  const showDim = $("tog-all").checked;
+  if (state.scale >= 1.15) {
+    const a = lineAtX(0);
+    const b = lineAtX(w);
+    for (let i = a; i <= b; i++) {
+      const x = xOfLine(i);
+      let color = null;
+      if (anomSet.has(i)) color = "#e35d5d";
+      else if (keySet.has(i)) color = "#e0b03a";
+      else if (showDim) color = "rgba(90,110,130,0.45)";
+      if (!color) continue;
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y + 4, Math.max(1, state.scale * 0.7), h - 8);
+    }
+    return;
+  }
+  for (let px = 0; px < w; px++) {
+    const a = lineAtX(px);
+    const b = lineAtX(px + 1);
+    let anom = false;
+    let key = false;
+    for (let i = a; i <= b; i++) {
+      if (anomSet.has(i)) {
+        anom = true;
+        break;
+      }
+      if (keySet.has(i)) key = true;
+    }
+    if (anom) ctx.fillStyle = "#e35d5d";
+    else if (key) ctx.fillStyle = "#e0b03a";
+    else if (showDim) ctx.fillStyle = "rgba(90,110,130,0.28)";
+    else continue;
+    ctx.fillRect(px, y + 5, 1, h - 10);
+  }
+}
+
+function drawSpans(ctx, spans, y, h, colorFn, trackKey) {
+  for (const s of spans || []) {
+    const { x, w } = spanRect(s);
+    if (x + w < 0 || x > ctx.canvas.clientWidth) continue;
+    const col = colorFn(s) || "#4a6078";
+    ctx.fillStyle = col;
+    roundRect(ctx, x, y + 4, w, h - 8, 3);
+    ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillRect(x, y + 4, Math.min(2, w), h - 8);
+    if (w >= 28) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x + 4, y + 4, w - 8, h - 8);
+      ctx.clip();
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.font = "11px ui-sans-serif, sans-serif";
+      ctx.fillText(s.label || "", x + 6, y + h / 2 + 4);
+      ctx.restore();
+    }
+    state.hits.push({
+      type: "span",
+      track: trackKey,
+      span: s,
+      x,
+      y: y + 4,
+      w,
+      h: h - 8,
+    });
+  }
+}
+
+function drawCases(ctx, y, h, w) {
+  const tracks = (state.data && state.data.tracks) || {};
+  const cases = tracks.cases || [];
+  const sessions = tracks.sessions || [];
+  drawSpans(ctx, cases, y, h, (s) => s.color || "#4e79a7", "cases");
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 1;
+  for (const ses of sessions) {
+    if (!ses.restart && ses.n === 1) continue;
+    const x = xOfLine(ses.start);
+    if (x < -2 || x > w + 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(x, y + 3);
+    ctx.lineTo(x, y + h - 3);
+    ctx.stroke();
+    if (ses.restart && state.scale * (ses.end - ses.start + 1) > 36) {
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.font = "10px ui-sans-serif, sans-serif";
+      ctx.fillText(`#${ses.n} 重启`, x + 4, y + h - 6);
+    }
+  }
+  ctx.restore();
+}
+
+function drawRuler(ctx, w) {
+  ctx.fillStyle = "#101820";
+  ctx.fillRect(0, 0, w, RULER_H);
+  ctx.fillStyle = "#6a7c90";
+  ctx.font = "10px ui-sans-serif, sans-serif";
+  const n = lineCount();
+  const target = 80;
+  const linesPer = Math.max(1, Math.round(target / state.scale));
+  const step = niceStep(linesPer);
+  const a = lineAtX(0);
+  const b = lineAtX(w);
+  const start = Math.floor(a / step) * step;
+  for (let i = Math.max(1, start); i <= b; i += step) {
+    const x = xOfLine(i);
+    ctx.fillStyle = "#3a516c";
+    ctx.fillRect(x, RULER_H - 6, 1, 6);
+    ctx.fillStyle = "#8a9bb0";
+    ctx.fillText(String(i), x + 3, 12);
+  }
+  void n;
+}
+
+function niceStep(n) {
+  const p = Math.pow(10, Math.floor(Math.log10(Math.max(1, n))));
+  const m = n / p;
+  if (m <= 1) return p;
+  if (m <= 2) return 2 * p;
+  if (m <= 5) return 5 * p;
+  return 10 * p;
+}
+
+function drawNle() {
+  const data = state.data;
+  if (!data) return;
+  const cv = $("nle-canvas");
+  const { w, h, ctx } = canvasSize(cv);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#121a22";
+  ctx.fillRect(0, 0, w, h);
+  state.hits = [];
+  const layout = trackLayout();
+  drawRuler(ctx, w);
+  ctx.strokeStyle = "#1b2733";
+  ctx.lineWidth = 1;
+  for (const t of layout) {
+    ctx.beginPath();
+    ctx.moveTo(0, t.y);
+    ctx.lineTo(w, t.y);
+    ctx.stroke();
+  }
+  const tracks = data.tracks || {};
+  const byKey = Object.fromEntries(layout.map((t) => [t.key, t]));
+  drawCases(ctx, byKey.cases.y, byKey.cases.h, w);
+  drawTicks(ctx, byKey.log.y, byKey.log.h, w);
+  drawSpans(ctx, tracks.l1, byKey.l1.y, byKey.l1.h, (s) => L1_COLOR[s.label], "l1");
+  drawSpans(ctx, tracks.l2, byKey.l2.y, byKey.l2.h, (s) => L2_COLOR[s.label] || "#5aa6e8", "l2");
+  drawSpans(ctx, tracks.l3, byKey.l3.y, byKey.l3.h, (s) => L3_COLOR[s.label] || "#e07070", "l3");
+
+  // exit markers: thin dim line
+  for (const m of tracks.markers || []) {
+    if (m.kind !== "exit") continue;
+    const x = xOfLine(m.line) + state.scale * 0.5;
+    ctx.strokeStyle = "rgba(227,93,93,0.45)";
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, RULER_H);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  const pins = uniqueStartups(tracks.markers);
+  for (const pin of pins) {
+    const x = xOfLine(pin.line) + state.scale * 0.5;
+    ctx.strokeStyle = "rgba(110,200,154,0.7)";
+    ctx.lineWidth = 1.25;
+    ctx.setLineDash([3, 2]);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const r1 = drawFlag(ctx, x, 2, pin.version);
+    const r2 = drawFlag(ctx, x, byKey.cases.y + 3, pin.version);
+    state.hits.push({ type: "pin", pin, ...r1 });
+    state.hits.push({ type: "pin", pin, ...r2 });
+  }
+
+  drawPlayhead(ctx, h);
+  updatePlayInfo();
+  drawOverview();
+}
+
+function drawOverview() {
+  const cv = $("overview");
+  const data = state.data;
+  if (!data) return;
+  const { w, h, ctx } = canvasSize(cv);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#0c1218";
+  ctx.fillRect(0, 0, w, h);
+  const n = lineCount();
+  const px = (line) => ((line - 1) / n) * w;
+  for (const c of (data.tracks && data.tracks.cases) || []) {
+    ctx.fillStyle = c.color || "#4e79a7";
+    ctx.globalAlpha = 0.55;
+    ctx.fillRect(px(c.start), 4, Math.max(2, px(c.end + 1) - px(c.start)), h - 8);
+    ctx.globalAlpha = 1;
+  }
+  const viewW = $("nle-canvas").clientWidth || w;
+  const x0 = (state.scrollX / (n * state.scale)) * w;
+  const x1 = ((state.scrollX + viewW) / (n * state.scale)) * w;
+  ctx.strokeStyle = "rgba(255,255,255,0.7)";
+  ctx.strokeRect(x0, 1, Math.max(2, x1 - x0), h - 2);
+  const ph = px(state.playhead);
+  ctx.fillStyle = "#ff4d4d";
+  ctx.fillRect(ph, 0, 2, h);
+  for (const m of (data.tracks && data.tracks.markers) || []) {
+    if (m.kind !== "startup") continue;
+    ctx.fillStyle = "#6ec89a";
+    ctx.fillRect(px(m.line), 1, 2, h - 2);
+  }
+}
+
+function queueDraw() {
+  if (state.drawQueued) return;
+  state.drawQueued = true;
+  requestAnimationFrame(() => {
+    state.drawQueued = false;
+    drawNle();
+  });
+}
+
+function timeOfLine(n) {
+  const lines = (state.data && state.data.lines) || [];
+  if (!lines.length) return "";
+  const first = lines[0].n;
+  const ln = lines[n - first];
+  if (ln && ln.n === n) return ln.t || "";
+  let best = "";
+  for (const l of lines) {
+    if (l.n > n) break;
+    if (l.t) best = l.t;
+  }
+  return best;
+}
+
+function updatePlayInfo() {
+  const el = $("play-info");
+  if (!el || !state.data) return;
+  const t = timeOfLine(state.playhead);
+  el.textContent = `行 ${state.playhead} / ${lineCount()}` + (t ? `  ${t}` : "");
+}
+
+async function setPlayhead(n, fromTerm) {
+  const next = clamp(n | 0, 1, lineCount());
+  const changed = next !== state.playhead;
+  state.playhead = next;
+  if (state.data && state.data.lines_windowed) {
+    if (next < state.data.lines_start || next > state.data.lines_end) {
+      await loadTimeline({ center: next });
+      return;
+    }
+  }
+  if (state.follow && !fromTerm) scrollTermToPlayhead();
+  else renderTerm();
+  queueDraw();
+  void changed;
+}
+
+function scrollTermToPlayhead() {
+  const term = $("term");
+  const idx = state.lineIndex.has(state.playhead)
+    ? state.lineIndex.get(state.playhead)
+    : state.viewLines.findIndex((l) => l.n >= state.playhead);
+  if (idx < 0) {
+    renderTerm();
+    return;
+  }
+  const y = idx * LINE_H - term.clientHeight * 0.35;
+  state.progScroll = true;
+  term.scrollTop = Math.max(0, y);
+  renderTerm();
+  requestAnimationFrame(() => {
+    state.progScroll = false;
+  });
+}
+
+function renderTerm() {
+  const term = $("term");
+  const lines = state.viewLines;
+  if (!state.data) return;
+  let spacer = term.querySelector("#term-spacer");
+  if (!spacer) {
+    term.innerHTML = "";
+    spacer = document.createElement("div");
+    spacer.id = "term-spacer";
+    term.appendChild(spacer);
+  }
+  spacer.style.height = `${Math.max(lines.length, 1) * LINE_H}px`;
+  const y = term.scrollTop;
+  const vh = term.clientHeight || 200;
+  const start = Math.max(0, Math.floor(y / LINE_H) - 6);
+  const end = Math.min(lines.length, Math.ceil((y + vh) / LINE_H) + 6);
+  const keep = new Set();
+  for (let i = start; i < end; i++) keep.add(String(lines[i].n));
+  for (const node of [...spacer.children]) {
+    if (!keep.has(node.dataset.n)) node.remove();
+  }
+  const have = new Set([...spacer.children].map((n) => n.dataset.n));
+  for (let i = start; i < end; i++) {
+    const ln = lines[i];
+    const id = String(ln.n);
+    let el = have.has(id)
+      ? spacer.querySelector(`[data-n="${id}"]`)
+      : null;
+    if (!el) {
+      el = document.createElement("div");
+      el.dataset.n = id;
+      el.innerHTML = `<span class="tn"></span><span class="tt"></span><span class="tlv"></span><span class="traw"></span>`;
+      el.addEventListener("click", () => {
+        state.follow = true;
+        $("btn-follow").hidden = true;
+        setPlayhead(ln.n, true);
+        scrollTermToPlayhead();
+      });
+      spacer.appendChild(el);
+    }
+    el.style.top = `${i * LINE_H}px`;
+    const cls = ["tline"];
+    if (ln.n === state.playhead) cls.push("play");
+    if (ln.special === "startup") cls.push("startup");
+    else if (ln.special === "version") cls.push("version");
+    if (ln.mark === "key") cls.push("key");
+    if (ln.mark === "anomaly") cls.push("anomaly");
+    if (ln.noise) cls.push("noise");
+    el.className = cls.join(" ");
+    el.querySelector(".tn").textContent = ln.n;
+    el.querySelector(".tt").textContent = ln.t || "";
+    const lv = el.querySelector(".tlv");
+    lv.textContent = ln.lv || "";
+    lv.className = "tlv" + (ln.lv ? ` lv-${ln.lv}` : "");
+    el.querySelector(".traw").textContent = ln.raw || "";
+  }
+}
+
+function hitAt(mx, my) {
+  for (let i = state.hits.length - 1; i >= 0; i--) {
+    const h = state.hits[i];
+    if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) return h;
+  }
+  return null;
+}
+
+function tipHtml(hit) {
+  if (!hit) return "";
+  if (hit.type === "pin") {
+    const p = hit.pin;
+    return `启动${p.version ? "  " + p.version : ""}\n行 ${p.line}` + (p.t ? `  ${p.t}` : "");
+  }
+  const s = hit.span;
+  return `${s.label}\n行 ${s.start}–${s.end}` + (s.t0 ? `\n${s.t0} – ${s.t1 || ""}` : "");
+}
+
+function bindNle() {
+  const cv = $("nle-canvas");
+  const ov = $("overview");
+  const tip = $("nle-tip");
+
+  cv.addEventListener("wheel", (ev) => {
+    if (!state.data) return;
+    ev.preventDefault();
+    const rect = cv.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    if (ev.shiftKey) {
+      state.scrollX = clamp(state.scrollX + ev.deltaY, 0, maxScroll());
+    } else {
+      const factor = ev.deltaY < 0 ? 1.18 : 1 / 1.18;
+      const line = (x + state.scrollX) / state.scale;
+      const ns = clamp(state.scale * factor, minScale(), MAX_SCALE);
+      state.scale = ns;
+      state.scrollX = clamp(line * ns - x, 0, maxScroll());
+    }
+    queueDraw();
+  }, { passive: false });
+
+  cv.addEventListener("pointerdown", (ev) => {
+    if (!state.data) return;
+    cv.setPointerCapture(ev.pointerId);
+    const rect = cv.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const y = ev.clientY - rect.top;
+    const phx = xOfLine(state.playhead) + state.scale * 0.5;
+    const nearPh = Math.abs(x - phx) <= 7 || y <= RULER_H;
+    state.drag = {
+      kind: nearPh ? "play" : "pan",
+      x0: x,
+      y0: y,
+      sx: state.scrollX,
+      moved: false,
+      hit: hitAt(x, y),
+    };
+  });
+
+  cv.addEventListener("pointermove", (ev) => {
+    const rect = cv.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const y = ev.clientY - rect.top;
+    if (state.drag) {
+      const dx = x - state.drag.x0;
+      if (Math.abs(dx) > 3) state.drag.moved = true;
+      if (state.drag.kind === "play") {
+        setPlayhead(lineAtX(x));
+      } else {
+        state.scrollX = clamp(state.drag.sx - dx, 0, maxScroll());
+        queueDraw();
+      }
+      tip.hidden = true;
+      return;
+    }
+    const hit = hitAt(x, y);
+    if (hit) {
+      tip.hidden = false;
+      tip.textContent = tipHtml(hit);
+      const box = $("nle").getBoundingClientRect();
+      tip.style.left = `${ev.clientX - box.left + 12}px`;
+      tip.style.top = `${ev.clientY - box.top + 12}px`;
+      cv.style.cursor = "pointer";
+    } else {
+      tip.hidden = true;
+      cv.style.cursor = "crosshair";
+    }
+  });
+
+  function endDrag(ev) {
+    if (!state.drag) return;
+    const rect = cv.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const y = ev.clientY - rect.top;
+    const d = state.drag;
+    state.drag = null;
+    if (!d.moved) {
+      if (d.hit && d.hit.type === "span") setPlayhead(d.hit.span.start);
+      else if (d.hit && d.hit.type === "pin") setPlayhead(d.hit.pin.line);
+      else setPlayhead(lineAtX(x));
+    }
+    void y;
+  }
+  cv.addEventListener("pointerup", endDrag);
+  cv.addEventListener("pointercancel", () => {
+    state.drag = null;
+  });
+
+  ov.addEventListener("pointerdown", (ev) => {
+    if (!state.data) return;
+    ov.setPointerCapture(ev.pointerId);
+    const seek = (e) => {
+      const r = ov.getBoundingClientRect();
+      const t = clamp((e.clientX - r.left) / r.width, 0, 1);
+      setPlayhead(Math.round(t * (lineCount() - 1)) + 1);
+      const viewW = $("nle-canvas").clientWidth || r.width;
+      const x = (state.playhead - 1) * state.scale;
+      state.scrollX = clamp(x - viewW / 2, 0, maxScroll());
+      queueDraw();
+    };
+    state.drag = { kind: "overview" };
+    seek(ev);
+    const move = (e) => seek(e);
+    const up = () => {
+      ov.removeEventListener("pointermove", move);
+      ov.removeEventListener("pointerup", up);
+      state.drag = null;
+    };
+    ov.addEventListener("pointermove", move);
+    ov.addEventListener("pointerup", up);
+  });
+
+  $("btn-zoom-in").addEventListener("click", () => {
+    const cvw = $("nle-canvas").clientWidth / 2;
+    const line = (cvw + state.scrollX) / state.scale;
+    state.scale = clamp(state.scale * 1.25, minScale(), MAX_SCALE);
+    state.scrollX = clamp(line * state.scale - cvw, 0, maxScroll());
+    queueDraw();
+  });
+  $("btn-zoom-out").addEventListener("click", () => {
+    const cvw = $("nle-canvas").clientWidth / 2;
+    const line = (cvw + state.scrollX) / state.scale;
+    state.scale = clamp(state.scale / 1.25, minScale(), MAX_SCALE);
+    state.scrollX = clamp(line * state.scale - cvw, 0, maxScroll());
+    queueDraw();
+  });
+  $("btn-zoom-fit").addEventListener("click", () => {
+    fitZoom();
+    queueDraw();
+  });
+}
+
+function bindTerm() {
+  const term = $("term");
+  term.addEventListener("scroll", () => {
+    if (state.progScroll) {
+      renderTerm();
+      return;
+    }
+    if (state.follow) {
+      state.follow = false;
+      $("btn-follow").hidden = false;
+    }
+    renderTerm();
+  });
+  $("btn-follow").addEventListener("click", () => {
+    state.follow = true;
+    $("btn-follow").hidden = true;
+    scrollTermToPlayhead();
+  });
+}
+
+function bindSplit() {
+  const split = $("split");
+  const nle = $("nle");
+  split.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    const startY = ev.clientY;
+    const startH = nle.getBoundingClientRect().height;
+    const move = (e) => {
+      const dy = startY - e.clientY;
+      nle.style.height = `${clamp(startH + dy, 160, 520)}px`;
+      queueDraw();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  });
+}
+
+function bindKeys() {
+  window.addEventListener("keydown", (ev) => {
+    if (!state.data) return;
+    const tag = (ev.target && ev.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (ev.key === "ArrowLeft") {
+      ev.preventDefault();
+      setPlayhead(state.playhead - 1);
+    } else if (ev.key === "ArrowRight") {
+      ev.preventDefault();
+      setPlayhead(state.playhead + 1);
+    } else if (ev.key === "Home") {
+      ev.preventDefault();
+      setPlayhead(1);
+    } else if (ev.key === "End") {
+      ev.preventDefault();
+      setPlayhead(lineCount());
+    }
+  });
+  window.addEventListener("resize", () => {
+    if (!state.data) return;
+    state.scale = clamp(state.scale, minScale(), MAX_SCALE);
+    state.scrollX = clamp(state.scrollX, 0, maxScroll());
+    renderTerm();
+    queueDraw();
+  });
 }
 
 $("file-input").addEventListener("change", async (ev) => {
@@ -260,13 +961,26 @@ $("file-input").addEventListener("change", async (ev) => {
   }
 });
 
-$("tog-noise").addEventListener("change", loadTimeline);
-$("tog-all").addEventListener("change", loadTimeline);
+$("tog-noise").addEventListener("change", () => {
+  rebuildViewLines();
+  renderTerm();
+  queueDraw();
+});
+$("tog-all").addEventListener("change", () => {
+  rebuildViewLines();
+  renderTerm();
+  if (state.follow) scrollTermToPlayhead();
+  queueDraw();
+});
 $("reload-spec").addEventListener("click", async () => {
   await api("/api/spec/reload", { method: "POST" });
   await refreshSpec();
-  if (state.selected) await loadTimeline();
+  if (state.selected) await loadTimeline({ center: state.playhead });
 });
 
+bindNle();
+bindTerm();
+bindSplit();
+bindKeys();
 refreshSpec();
 refreshLogs();

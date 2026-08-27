@@ -14,6 +14,7 @@ ROOT = APP_DIR.parent
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
+from nle import build_nle  # noqa: E402
 from parser import (  # noqa: E402
     MAX_EVENTS_PAYLOAD,
     filter_events,
@@ -208,6 +209,20 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "stored file missing"})
             return
         events, meta = parse_and_classify(path, SPEC, rec.get("original_name"))
+        raw_text = path.read_text(encoding="utf-8", errors="replace")
+        raw_lines = raw_text.splitlines()
+        center = window = None
+        try:
+            if qs.get("center"):
+                center = int((qs.get("center") or ["0"])[0])
+        except ValueError:
+            center = None
+        try:
+            if qs.get("window"):
+                window = int((qs.get("window") or ["0"])[0])
+        except ValueError:
+            window = None
+        nle = build_nle(events, raw_lines, center=center, window=window)
         visible = filter_events(events, show_noise=show_noise, show_all=show_all)
         truncated = False
         total = len(events)
@@ -239,6 +254,13 @@ class Handler(BaseHTTPRequestHandler):
             "filtered_default": not show_all,
             "spec": SPEC.counts(),
             "events": [to_public_event(ev, i) for i, ev in enumerate(visible)],
+            "line_count": nle["line_count"],
+            "lines": nle["lines"],
+            "lines_windowed": nle["lines_windowed"],
+            "lines_start": nle["lines_start"],
+            "lines_end": nle["lines_end"],
+            "ticks": nle["ticks"],
+            "tracks": nle["tracks"],
         }
         self._json(200, payload)
 

@@ -308,6 +308,7 @@ def to_public_event(ev: dict, idx: int) -> dict:
         "value_mm": ev.get("value_mm"),
         "threshold": ev.get("threshold"),
         "block": bool(ev.get("block")),
+        "hlevel": ev.get("hlevel"),
     }
 
 

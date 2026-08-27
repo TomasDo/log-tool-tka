@@ -32,7 +32,7 @@
     <main id="main">
       <div id="empty-state">
         <h2>选择或导入一份日志</h2>
-        <p>一次只查看一个文件。时间轴默认隐藏噪声与未映射行，规则可在 spec 文件中修改。</p>
+        <p>一次只查看一个文件。上方是原始日志终端，下方是按行号对齐的多轨时间轴。</p>
       </div>
       <section id="timeline-wrap" hidden>
         <header id="tl-head">
@@ -44,10 +44,31 @@
         </header>
         <div id="tl-toolbar">
           <label><input type="checkbox" id="tog-noise" /> 显示噪声</label>
-          <label><input type="checkbox" id="tog-all" /> 显示全部</label>
+          <label><input type="checkbox" id="tog-all" checked /> 显示全部</label>
           <span id="return-count"></span>
+          <span id="play-info"></span>
         </div>
-        <div id="timeline"></div>
+        <div id="workspace">
+          <div id="term-wrap">
+            <div id="term"></div>
+            <button id="btn-follow" type="button" hidden>跟随播放头</button>
+          </div>
+          <div id="split" title="拖动调整高度"></div>
+          <div id="nle">
+            <div id="nle-tools">
+              <button type="button" id="btn-zoom-out" title="缩小">−</button>
+              <button type="button" id="btn-zoom-in" title="放大">+</button>
+              <button type="button" id="btn-zoom-fit">适应窗口</button>
+              <span id="nle-hint">滚轮缩放 · Shift+滚轮或拖动平移 · 拖播放头或点轨道</span>
+            </div>
+            <canvas id="overview"></canvas>
+            <div id="nle-body">
+              <div id="nle-labels"></div>
+              <canvas id="nle-canvas"></canvas>
+            </div>
+            <div id="nle-tip" hidden></div>
+          </div>
+        </div>
       </section>
     </main>
   </div>
