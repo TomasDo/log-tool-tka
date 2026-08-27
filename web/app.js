@@ -904,8 +904,17 @@ function tipHtml(hit) {
   const cuts = s.cut_deltas || [];
   if (cuts.length) {
     for (const c of cuts) {
+      if (c.missing) {
+        out += `\n${c.label}  未采集  标注`;
+        continue;
+      }
       const unit = c.unit === "mm" ? "mm" : "°";
       const flag = c.over2 ? "  重点" : c.over1 ? "  标注" : "";
+      if (c.plan == null || c.delta == null || c.measured == null) {
+        const meas = c.measured != null ? Number(c.measured).toFixed(2) : "—";
+        out += `\n${c.label}  实测 ${meas} ${unit}${flag}`;
+        continue;
+      }
       const d = Number(c.delta);
       const dstr = (d >= 0 ? "+" : "") + d.toFixed(2);
       out += `\n${c.label}  目标 ${Number(c.plan).toFixed(2)}  实测 ${Number(c.measured).toFixed(2)}  Δ ${dstr} ${unit}${flag}`;

@@ -85,6 +85,16 @@ CUT_MAP = [
     ("collect check tibia varus", "plan tibia varus", "内外翻角", "deg", "胫骨近端验证"),
 ]
 
+# Cut L2 → verify L2. Missing params attach to cut if they never entered verify.
+CUT_TO_VERIFY = {
+    "股骨远端截骨": "股骨远端验证",
+    "股骨四合一": "股骨后方验证",
+    "胫骨近端截骨": "胫骨近端验证",
+}
+EXPECTED_BY_SPAN: dict[str, list[tuple[str, str]]] = {}
+for _c, _p, _display, _unit, _span in CUT_MAP:
+    EXPECTED_BY_SPAN.setdefault(_span, []).append((_display, _unit))
+
 ALL_LINES_LIMIT = 30_000
 HUGE_LINES = 80_000
 DEFAULT_WINDOW = 12_000
@@ -375,6 +385,8 @@ def collect_cut_deltas(events: list[dict]) -> tuple[list[dict], list[dict]]:
     """Compare collect-check readings to the latest in-session plan snapshot.
 
     Returns (items, cut_flags). Flags only for |Δ|>1 (key) or |Δ|>2 (anomaly).
+    A matched collect still counts even if the plan snapshot has no target yet
+    (no Δ, no flags) so it is not treated as 未采集.
     """
     plan: dict[str, float] = {}
     items: list[dict] = []
@@ -400,7 +412,24 @@ def collect_cut_deltas(events: list[dict]) -> tuple[list[dict], list[dict]]:
             if check_ph not in msg:
                 continue
             measured = extract_last_mm(msg)
-            if measured is None or plan_ph not in plan:
+            if measured is None:
+                break
+            if plan_ph not in plan:
+                items.append(
+                    {
+                        "label": display,
+                        "unit": unit,
+                        "plan": None,
+                        "measured": measured,
+                        "delta": None,
+                        "over1": False,
+                        "over2": False,
+                        "line": line,
+                        "span": span,
+                        "level": "ok",
+                        "missing": False,
+                    }
+                )
                 break
             planned = plan[plan_ph]
             delta = measured - planned
@@ -425,6 +454,7 @@ def collect_cut_deltas(events: list[dict]) -> tuple[list[dict], list[dict]]:
                     "line": line,
                     "span": span,
                     "level": level,
+                    "missing": False,
                 }
             )
             if level in ("key", "anomaly"):
@@ -433,11 +463,73 @@ def collect_cut_deltas(events: list[dict]) -> tuple[list[dict], list[dict]]:
     return items, flags
 
 
-def attach_cut_deltas(spans: list[dict], items: list[dict]) -> None:
-    """Last collect-check vs plan per label onto 股骨/胫骨验证 L2 spans."""
-    order_by_span: dict[str, list[str]] = {}
-    for _c, _p, display, _u, span in CUT_MAP:
-        order_by_span.setdefault(span, []).append(display)
+def _session_end_for(line: int, events: list[dict] | None, line_count: int) -> int:
+    """Last line of the session that contains `line` (Startup/Exit bounds)."""
+    if not events:
+        return line_count or line
+    for ev in events:
+        ln = int(ev.get("line") or 1)
+        if ln <= line:
+            continue
+        msg = _msg(ev)
+        if "Titan Application Startup" in msg:
+            return max(line, ln - 1)
+        if "Titan Application Exit" in msg:
+            return ln
+    return line_count or line
+
+
+def _cut_row_from_item(e: dict) -> dict:
+    row = {
+        "label": e["label"],
+        "unit": e["unit"],
+        "over1": bool(e.get("over1")),
+        "over2": bool(e.get("over2")),
+        "line": e["line"],
+        "missing": False,
+    }
+    if e.get("plan") is not None:
+        row["plan"] = round(e["plan"], 2)
+    if e.get("measured") is not None:
+        row["measured"] = round(e["measured"], 2)
+    if e.get("delta") is not None:
+        row["delta"] = round(e["delta"], 2)
+    return row
+
+
+def _missing_cut_row(display: str, unit: str, line: int) -> dict:
+    return {
+        "label": display,
+        "unit": unit,
+        "missing": True,
+        "over1": True,
+        "over2": False,
+        "line": line,
+    }
+
+
+def _fill_cut_deltas(sp: dict, expected: list[tuple[str, str]], hit: list[dict], mark_line: int) -> None:
+    by_key: dict = {}
+    for e in hit:
+        by_key[e["label"]] = e
+    rows = []
+    for display, unit in expected:
+        if display in by_key:
+            rows.append(_cut_row_from_item(by_key[display]))
+        else:
+            rows.append(_missing_cut_row(display, unit, mark_line))
+    sp["cut_deltas"] = rows
+
+
+def attach_cut_deltas(
+    spans: list[dict],
+    items: list[dict],
+    events: list[dict] | None = None,
+    line_count: int = 0,
+) -> None:
+    """Expected params onto verify L2 spans (pad 未采集); onto cut spans if no later verify."""
+    if not line_count:
+        line_count = max((int(s.get("end") or 0) for s in spans), default=0)
 
     for sp in spans:
         lab = sp.get("label")
@@ -446,25 +538,46 @@ def attach_cut_deltas(spans: list[dict], items: list[dict]) -> None:
         lo = int(sp["start"])
         hi = int(sp["end"]) + 12
         hit = [e for e in items if e.get("span") == lab and lo <= e["line"] <= hi]
-        if not hit:
+        _fill_cut_deltas(sp, EXPECTED_BY_SPAN.get(lab, []), hit, lo)
+
+    for sp in spans:
+        lab = sp.get("label")
+        verify_lab = CUT_TO_VERIFY.get(lab or "")
+        if not verify_lab:
             continue
-        by_key: dict = {}
-        for e in hit:
-            by_key[e["label"]] = e
-        ordered = [by_key[k] for k in order_by_span.get(lab, []) if k in by_key]
-        sp["cut_deltas"] = [
-            {
-                "label": e["label"],
-                "unit": e["unit"],
-                "plan": round(e["plan"], 2),
-                "measured": round(e["measured"], 2),
-                "delta": round(e["delta"], 2),
-                "over1": bool(e["over1"]),
-                "over2": bool(e["over2"]),
-                "line": e["line"],
-            }
-            for e in ordered
+        if sp.get("cut_deltas"):
+            continue
+        cut_start = int(sp["start"])
+        session_end = _session_end_for(cut_start, events, line_count)
+        has_verify_after = any(
+            s.get("label") == verify_lab
+            and cut_start < int(s["start"]) <= session_end
+            for s in spans
+        )
+        if has_verify_after:
+            continue
+        hit = [
+            e
+            for e in items
+            if e.get("span") == verify_lab and cut_start <= e["line"] <= session_end
         ]
+        _fill_cut_deltas(sp, EXPECTED_BY_SPAN.get(verify_lab, []), hit, cut_start)
+
+
+def gather_missing_cut_flags(spans: list[dict]) -> list[dict]:
+    """Timeline key marks for 未采集 rows (verify or cut span start)."""
+    flags: list[dict] = []
+    seen: set[int] = set()
+    for sp in spans:
+        for c in sp.get("cut_deltas") or []:
+            if not c.get("missing"):
+                continue
+            ln = int(c.get("line") or 0)
+            if not ln or ln in seen:
+                continue
+            seen.add(ln)
+            flags.append({"line": ln, "level": "key"})
+    return flags
 
 
 def apply_cut_flags(marks: list[str], flags: list[dict]) -> None:
@@ -576,8 +689,8 @@ def build_page_tracks(events: list[dict], line_count: int, times: list[str]) -> 
     attach_errors(l2, errs)
     attach_errors(l3, errs)
     cut_items, _cut_flags = collect_cut_deltas(events)
-    attach_cut_deltas(l2, cut_items)
-    attach_cut_deltas(l3, cut_items)
+    attach_cut_deltas(l2, cut_items, events, line_count)
+    attach_cut_deltas(l3, cut_items, events, line_count)
     return {"l1": l1, "l2": l2, "l3": l3, "device": device}
 
 
@@ -1001,6 +1114,8 @@ def build_nle(
     apply_cut_flags(marks, cut_flags)
     annotate_hlevel(events)
     pages = build_page_tracks(events, line_count, times)
+    apply_cut_flags(marks, gather_missing_cut_flags(pages["l2"]))
+    apply_cut_flags(marks, gather_missing_cut_flags(pages["l3"]))
     sc = build_sessions_and_cases(events, line_count, times)
     specials = _special_index(events, sc["markers"], line_count)
     lines, windowed, lo, hi = build_lines(
