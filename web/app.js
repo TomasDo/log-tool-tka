@@ -891,7 +891,17 @@ function tipHtml(hit) {
   }
   const s = hit.span;
   const name = hit.track === "cases" ? fullCaseLabel(s) : s.label;
-  return `${name}\n行 ${s.start}–${s.end}` + (s.t0 ? `\n${s.t0} – ${s.t1 || ""}` : "");
+  let out = `${name}\n行 ${s.start}–${s.end}`;
+  if (s.t0) out += `\n${s.t0} – ${s.t1 || ""}`;
+  const errs = s.errors || [];
+  if (errs.length) {
+    for (const e of errs) {
+      const flag = e.over ? "  >1mm" : "";
+      out += `\n${e.label}  ${Number(e.value).toFixed(2)} mm${flag}`;
+    }
+    if (s.error_max != null) out += `\n最大  ${Number(s.error_max).toFixed(2)} mm`;
+  }
+  return out;
 }
 
 function bindNle() {

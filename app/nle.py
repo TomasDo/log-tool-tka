@@ -19,6 +19,13 @@ LOADED_PLAN_RE = re.compile(
 SIDE_RE = re.compile(r"operation side\s+(left|right|l|r|左|右)", re.I)
 VERSION_RE = re.compile(r"Titan vesrion\s+(\S+)")
 VERSION_RE_ALT = re.compile(r"Titan version\s+(\S+)", re.I)
+FEMUR_REG_ERR_RE = re.compile(r"femur register error\s+([0-9.]+)", re.I)
+TIBIA_REG_ERR_RE = re.compile(r"tibia register error\s+([0-9.]+)", re.I)
+VERIFY_ERR_RE = re.compile(
+    r"probe verify (femur|tibia) point\s+(\d+)\s+error:\s*([0-9.]+)", re.I
+)
+NAIL_ERR_RE = re.compile(r"nail verify error\s+([0-9.]+)", re.I)
+ERROR_LIMIT_MM = 1.0
 
 ALL_LINES_LIMIT = 30_000
 HUGE_LINES = 80_000
@@ -246,6 +253,65 @@ def _close(open_span: _Open | None, end: int, times: list[str], bucket: list, pr
     )
 
 
+def parse_error_event(msg: str) -> dict | None:
+    m = FEMUR_REG_ERR_RE.search(msg)
+    if m:
+        return {"target": "股骨注册", "label": "RMS", "value": float(m.group(1))}
+    m = TIBIA_REG_ERR_RE.search(msg)
+    if m:
+        return {"target": "胫骨注册", "label": "RMS", "value": float(m.group(1))}
+    m = VERIFY_ERR_RE.search(msg)
+    if m:
+        bone = "股骨" if m.group(1).lower() == "femur" else "胫骨"
+        pt = int(m.group(2))
+        return {
+            "target": f"{bone}验证",
+            "label": f"点{pt}",
+            "point": pt,
+            "value": float(m.group(3)),
+        }
+    m = NAIL_ERR_RE.search(msg)
+    if m:
+        return {"target": "标记钉采集", "label": "验证", "value": float(m.group(1))}
+    return None
+
+
+def collect_errors(events: list[dict]) -> list[dict]:
+    out = []
+    for ev in events:
+        rec = parse_error_event(_msg(ev))
+        if not rec:
+            continue
+        rec["line"] = int(ev.get("line") or 1)
+        rec["over"] = rec["value"] > ERROR_LIMIT_MM
+        out.append(rec)
+    return out
+
+
+def attach_errors(spans: list[dict], errors: list[dict]) -> None:
+    """Put error readings onto the matching page span (last value per label)."""
+    for sp in spans:
+        hit = [e for e in errors if e["target"] == sp.get("label")
+               and int(sp["start"]) <= e["line"] <= int(sp["end"]) + 12]
+        if not hit:
+            continue
+        by_key: dict = {}
+        for e in hit:
+            by_key[e["label"]] = e
+        ordered = sorted(by_key.values(), key=lambda e: (e.get("point") or 0, e["line"]))
+        sp["errors"] = [
+            {
+                "label": e["label"],
+                "value": round(e["value"], 3),
+                "over": bool(e["over"]),
+                "line": e["line"],
+            }
+            for e in ordered
+        ]
+        mx = max(e["value"] for e in ordered)
+        sp["error_max"] = round(mx, 3)
+
+
 def build_page_tracks(events: list[dict], line_count: int, times: list[str]) -> dict:
     l1: list[dict] = []
     l2: list[dict] = []
@@ -337,6 +403,9 @@ def build_page_tracks(events: list[dict], line_count: int, times: list[str]) -> 
 
     close_l1(line_count)
     l2.extend(l2_ticks)
+    errs = collect_errors(events)
+    attach_errors(l2, errs)
+    attach_errors(l3, errs)
     return {"l1": l1, "l2": l2, "l3": l3, "device": device}
 
 
