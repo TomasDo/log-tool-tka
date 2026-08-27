@@ -11,7 +11,7 @@
 > - 类别：`lifecycle` 生命周期 / `page` 大页面跳转 / `step` 页内步骤 / `key` 关键信息 / `robot` 机器人动作 / `noise` 噪声 / `other`
 > - 时间轴：`show` 显示 | `hide` 默认隐藏
 > - 标注：`none` 普通 | `key` 重点（蓝/金） | `anomaly` 异常（红） | `pin` 特殊旗标（启动 / 版本）
-> - 阈值：可选。如 `>1` 表示日志里最后一个数字（单位 mm）大于 1 则升为异常，否则仍按「标注」列。空着=不做数值判断
+> - 阈值：可选。如 `>1` 表示日志里最后一个数字（单位 mm）大于 1 则升为异常，否则仍按「标注」列。空着=不做数值判断。表里的 `>1` 用于配准/点校验误差幅值；截骨验证是 |实测−方案|，在代码里比较，不要填到本列
 
 ## 日志格式（不要改，除非 Titan 换了 logger）
 
@@ -127,7 +127,7 @@
 
 ## 关键信息（重点标注）
 
-距离单位都是 **mm**。配准误差、点校验误差 **>1 mm 升为异常**（改「阈值」列即可）。
+距离单位都是 **mm**。配准误差、点校验误差 **>1 mm 升为异常**（改「阈值」列即可）。截骨验证不走本列阈值，见「截骨验证偏差」。
 
 | 日志匹配 | 匹配方式 | 软件步骤 | 类别 | 时间轴 | 标注 | 阈值 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -151,6 +151,18 @@
 | plan tibia varus | contains | 方案-胫骨内翻 | key | show | none |  |  |
 | plan tibia flexion | contains | 方案-胫骨屈曲 | key | show | none |  |  |
 | plan tibia rotation | contains | 方案-胫骨旋转 | key | show | none |  |  |
+| collect check femur distal medial cutting dpeth | contains | 远端内侧截骨量 | key | show | none |  | 实测 vs 最近一次 plan；源码拼写 dpeth |
+| collect check femur distal lateral cutting dpeth | contains | 远端外侧截骨量 | key | show | none |  | 实测 vs 最近一次 plan；源码拼写 dpeth |
+| collect check femur varus | contains | 股骨内外翻角 | key | show | none |  | 实测 vs 最近一次 plan |
+| collect check femur flexion | contains | 股骨前倾角 | key | show | none |  | 实测 vs 最近一次 plan |
+| collect check femur poster medial cutting dpeth | contains | 后方内侧截骨量 | key | show | none |  | 实测 vs 最近一次 plan；源码拼写 dpeth |
+| collect check femur poster lateral cutting dpeth | contains | 后方外侧截骨量 | key | show | none |  | 实测 vs 最近一次 plan；源码拼写 dpeth |
+| collect check femur rotation | contains | 股骨旋转角 | key | show | none |  | 实测 vs 最近一次 plan |
+| collect check tibia medial cutting dpeth | contains | 近端内侧截骨量 | key | show | none |  | 实测 vs 最近一次 plan；源码拼写 dpeth |
+| collect check tibia lateral cutting dpeth | contains | 近端外侧截骨量 | key | show | none |  | 实测 vs 最近一次 plan；源码拼写 dpeth |
+| collect check tibia flexion | contains | 胫骨后倾角 | key | show | none |  | 实测 vs 最近一次 plan |
+| collect check tibia rotation | contains | 胫骨旋转角 | key | show | none |  | 实测 vs 最近一次 plan |
+| collect check tibia varus | contains | 胫骨内外翻角 | key | show | none |  | 实测 vs 最近一次 plan；当前样本未出现此句 |
 | cutted after stretch medial max gap | contains | 截后伸直内侧最大间隙 | key | show | key |  |  |
 | cutted after stretch lateral max gap | contains | 截后伸直外侧最大间隙 | key | show | key |  |  |
 | cutted after bend medial max gap | contains | 截后屈曲内侧最大间隙 | key | show | key |  |  |
@@ -247,10 +259,22 @@
 
 ---
 
+## 截骨验证偏差
+
+导航页验证工具读数（`collect check …`）和**同一次会话里最近一次**方案目标（`plan …`）比较。`Titan Application Startup` 清空方案快照；方案被编辑会再打 `plan …`，始终用最新快照。
+
+- 长度 mm、角度 deg：|实测 − 方案| **>1** 标注（key / 金），**>2** 重点标注（anomaly / 红）。|Δ| ≤ 1 不加额外标记（例如方案 9 mm 的截骨量本身不是错误）。
+- 不要对 collect-check 原始数字套「阈值」列（那会把 9 mm 截骨量当成超限）。比较在代码里做。
+- 时间轴二级块 **股骨远端验证 / 股骨后方验证 / 胫骨近端验证** 悬停显示 目标 / 实测 / 偏差。
+- 方案有 `plan tibia varus`，当前日志没有 `collect check tibia varus`；映射已留，出现后即可比较。
+- **不是** `after move guider` / `after tool1.0 move with checkplane`：那是机器人位姿，不是验证工具采集。
+
+源码拼写 `dpeth`（depth）。
+
 ## 已定（写在上面的表里了）
 
 - 距离单位 mm；配准和点校验 **>1 mm** 算异常
-- 配准页 check = 检查配准精度；导航页 check = 工具测量实际截骨量
+- 配准页 check = 检查配准精度；导航页 check = 实测截骨量 vs 方案目标；截骨量 |Δ|>1 mm 标注、>2 mm 重点；角度同样 1°/2°
 - 时间轴按一级页面分段：方案预览、准备、术中评估、导航（摆锯是导航下的二级）
 - 台车与手术同侧不显示，不同侧才标记
 - NDI 没连上算异常；KUKA 仅术中断开算异常

@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from parser import LOG_RE
+from spec import extract_last_mm
 
 UUID_RE = re.compile(
     r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
@@ -26,6 +27,63 @@ VERIFY_ERR_RE = re.compile(
 )
 NAIL_ERR_RE = re.compile(r"nail verify error\s+([0-9.]+)", re.I)
 ERROR_LIMIT_MM = 1.0
+CUT_LIMIT_1 = 1.0
+CUT_LIMIT_2 = 2.0
+CUT_SPAN_LABELS = ("股骨远端验证", "股骨后方验证", "胫骨近端验证")
+
+# collect-check phrase, plan phrase, hover label, unit, L2 span.
+# Full unique phrases so "femur distal medial" does not steal lateral.
+CUT_MAP = [
+    (
+        "collect check femur distal medial cutting dpeth",
+        "plan femur distal medial depth",
+        "远端内侧截骨量",
+        "mm",
+        "股骨远端验证",
+    ),
+    (
+        "collect check femur distal lateral cutting dpeth",
+        "plan femur distal lateral depth",
+        "远端外侧截骨量",
+        "mm",
+        "股骨远端验证",
+    ),
+    ("collect check femur varus", "plan femur varus", "内外翻角", "deg", "股骨远端验证"),
+    ("collect check femur flexion", "plan femur flexion", "前倾角", "deg", "股骨远端验证"),
+    (
+        "collect check femur poster medial cutting dpeth",
+        "plan femur poster medial depth",
+        "后方内侧截骨量",
+        "mm",
+        "股骨后方验证",
+    ),
+    (
+        "collect check femur poster lateral cutting dpeth",
+        "plan femur poster lateral depth",
+        "后方外侧截骨量",
+        "mm",
+        "股骨后方验证",
+    ),
+    ("collect check femur rotation", "plan femur rotation", "旋转角", "deg", "股骨后方验证"),
+    (
+        "collect check tibia medial cutting dpeth",
+        "plan tibia proximal medial depth",
+        "近端内侧截骨量",
+        "mm",
+        "胫骨近端验证",
+    ),
+    (
+        "collect check tibia lateral cutting dpeth",
+        "plan tibia proximal lateral depth",
+        "近端外侧截骨量",
+        "mm",
+        "胫骨近端验证",
+    ),
+    ("collect check tibia flexion", "plan tibia flexion", "后倾角", "deg", "胫骨近端验证"),
+    ("collect check tibia rotation", "plan tibia rotation", "旋转角", "deg", "胫骨近端验证"),
+    # plan has tibia varus; collect-check is not in current samples
+    ("collect check tibia varus", "plan tibia varus", "内外翻角", "deg", "胫骨近端验证"),
+]
 
 ALL_LINES_LIMIT = 30_000
 HUGE_LINES = 80_000
@@ -312,6 +370,117 @@ def attach_errors(spans: list[dict], errors: list[dict]) -> None:
         sp["error_max"] = round(mx, 3)
 
 
+
+def collect_cut_deltas(events: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Compare collect-check readings to the latest in-session plan snapshot.
+
+    Returns (items, cut_flags). Flags only for |Δ|>1 (key) or |Δ|>2 (anomaly).
+    """
+    plan: dict[str, float] = {}
+    items: list[dict] = []
+    flags: list[dict] = []
+    checks = sorted(CUT_MAP, key=lambda r: len(r[0]), reverse=True)
+    plans = sorted({r[1] for r in CUT_MAP}, key=len, reverse=True)
+
+    for ev in events:
+        msg = _msg(ev).rstrip()
+        line = int(ev.get("line") or 1)
+        if "Titan Application Startup" in msg:
+            plan.clear()
+            continue
+
+        plan_hit = next((ph for ph in plans if ph in msg), None)
+        if plan_hit is not None:
+            val = extract_last_mm(msg)
+            if val is not None:
+                plan[plan_hit] = val
+            continue
+
+        for check_ph, plan_ph, display, unit, span in checks:
+            if check_ph not in msg:
+                continue
+            measured = extract_last_mm(msg)
+            if measured is None or plan_ph not in plan:
+                break
+            planned = plan[plan_ph]
+            delta = measured - planned
+            ad = abs(delta)
+            over2 = ad > CUT_LIMIT_2
+            over1 = ad > CUT_LIMIT_1
+            if over2:
+                level = "anomaly"
+            elif over1:
+                level = "key"
+            else:
+                level = "ok"
+            items.append(
+                {
+                    "label": display,
+                    "unit": unit,
+                    "plan": planned,
+                    "measured": measured,
+                    "delta": delta,
+                    "over1": over1,
+                    "over2": over2,
+                    "line": line,
+                    "span": span,
+                    "level": level,
+                }
+            )
+            if level in ("key", "anomaly"):
+                flags.append({"line": line, "level": level})
+            break
+    return items, flags
+
+
+def attach_cut_deltas(spans: list[dict], items: list[dict]) -> None:
+    """Last collect-check vs plan per label onto 股骨/胫骨验证 L2 spans."""
+    order_by_span: dict[str, list[str]] = {}
+    for _c, _p, display, _u, span in CUT_MAP:
+        order_by_span.setdefault(span, []).append(display)
+
+    for sp in spans:
+        lab = sp.get("label")
+        if lab not in CUT_SPAN_LABELS:
+            continue
+        lo = int(sp["start"])
+        hi = int(sp["end"]) + 12
+        hit = [e for e in items if e.get("span") == lab and lo <= e["line"] <= hi]
+        if not hit:
+            continue
+        by_key: dict = {}
+        for e in hit:
+            by_key[e["label"]] = e
+        ordered = [by_key[k] for k in order_by_span.get(lab, []) if k in by_key]
+        sp["cut_deltas"] = [
+            {
+                "label": e["label"],
+                "unit": e["unit"],
+                "plan": round(e["plan"], 2),
+                "measured": round(e["measured"], 2),
+                "delta": round(e["delta"], 2),
+                "over1": bool(e["over1"]),
+                "over2": bool(e["over2"]),
+                "line": e["line"],
+            }
+            for e in ordered
+        ]
+
+
+def apply_cut_flags(marks: list[str], flags: list[dict]) -> None:
+    n = len(marks)
+    for f in flags:
+        ln = int(f.get("line") or 0)
+        if not (1 <= ln <= n):
+            continue
+        level = f.get("level") or "none"
+        i = ln - 1
+        if level == "anomaly":
+            marks[i] = "anomaly"
+        elif level == "key" and marks[i] != "anomaly":
+            marks[i] = "key"
+
+
 def build_page_tracks(events: list[dict], line_count: int, times: list[str]) -> dict:
     l1: list[dict] = []
     l2: list[dict] = []
@@ -406,6 +575,9 @@ def build_page_tracks(events: list[dict], line_count: int, times: list[str]) -> 
     errs = collect_errors(events)
     attach_errors(l2, errs)
     attach_errors(l3, errs)
+    cut_items, _cut_flags = collect_cut_deltas(events)
+    attach_cut_deltas(l2, cut_items)
+    attach_cut_deltas(l3, cut_items)
     return {"l1": l1, "l2": l2, "l3": l3, "device": device}
 
 
@@ -825,6 +997,8 @@ def build_nle(
     line_count = len(raw_lines)
     times = _time_index(events, line_count)
     marks, noise = _mark_index(events, line_count)
+    _cut_items, cut_flags = collect_cut_deltas(events)
+    apply_cut_flags(marks, cut_flags)
     annotate_hlevel(events)
     pages = build_page_tracks(events, line_count, times)
     sc = build_sessions_and_cases(events, line_count, times)

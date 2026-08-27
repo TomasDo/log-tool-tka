@@ -901,6 +901,16 @@ function tipHtml(hit) {
     }
     if (s.error_max != null) out += `\n最大  ${Number(s.error_max).toFixed(2)} mm`;
   }
+  const cuts = s.cut_deltas || [];
+  if (cuts.length) {
+    for (const c of cuts) {
+      const unit = c.unit === "mm" ? "mm" : "°";
+      const flag = c.over2 ? "  重点" : c.over1 ? "  标注" : "";
+      const d = Number(c.delta);
+      const dstr = (d >= 0 ? "+" : "") + d.toFixed(2);
+      out += `\n${c.label}  目标 ${Number(c.plan).toFixed(2)}  实测 ${Number(c.measured).toFixed(2)}  Δ ${dstr} ${unit}${flag}`;
+    }
+  }
   return out;
 }
 

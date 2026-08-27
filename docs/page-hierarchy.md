@@ -76,6 +76,8 @@
 | 2 | 胫骨近端验证 | tibia_check | switch tibia check step |
 | 2 | 股骨后方验证 | femur_posterior_check | switch femur poster check step |
 
+股骨远端验证 / 股骨后方验证 / 胫骨近端验证 悬停：验证工具 `collect check` 对比该会话最近一次 `plan`；|Δ| >1 mm 或 1° 标注，>2 mm 或 2° 重点。不改 L1/L2/L3 归属。
+
 ---
 
 ## 二级：术中评估 ?
