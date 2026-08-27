@@ -25,18 +25,18 @@ HUGE_LINES = 80_000
 DEFAULT_WINDOW = 12_000
 
 CASE_PALETTE = [
-    "#4e79a7",
-    "#f28e2b",
-    "#e15759",
-    "#76b7b2",
-    "#59a14f",
-    "#edc948",
-    "#b07aa1",
-    "#ff9da7",
-    "#9c755f",
-    "#bab0ac",
+    "#3d8bff",
+    "#ff8c42",
+    "#e63956",
+    "#2ec4b6",
+    "#7b61ff",
+    "#f4c430",
+    "#ff5d8f",
+    "#3ddc97",
+    "#c77dff",
+    "#ffb703",
 ]
-UNKNOWN_CASE_COLOR = "#5a6570"
+UNKNOWN_CASE_COLOR = "#6b7684"
 
 L1_LABELS = ("登录", "方案管理", "方案预览", "准备", "术中评估", "导航")
 

@@ -12,43 +12,80 @@ const TRACKS = [
   { key: "device", name: "设备", h: 22 },
 ];
 
+const CASE_PALETTE = [
+  "#3d8bff",
+  "#ff8c42",
+  "#e63956",
+  "#2ec4b6",
+  "#7b61ff",
+  "#f4c430",
+  "#ff5d8f",
+  "#3ddc97",
+  "#c77dff",
+  "#ffb703",
+];
+const UNKNOWN_CASE_COLOR = "#6b7684";
+
 const L1_COLOR = {
-  登录: "#6b7c8f",
-  方案管理: "#2aa198",
-  方案预览: "#9b7ed9",
-  准备: "#3d8fd4",
-  术中评估: "#e09a3e",
-  导航: "#3caf7a",
+  登录: "#8b9cb0",
+  方案管理: "#1ec8c8",
+  方案预览: "#b07cff",
+  准备: "#3d9bff",
+  术中评估: "#ff9f1c",
+  导航: "#2ed573",
 };
 const L2_COLOR = {
-  股骨注册: "#5aa6e8",
-  股骨验证: "#7ec0f0",
-  胫骨注册: "#5bc4b0",
-  胫骨验证: "#8fd9cc",
-  股骨远端截骨: "#4caf7a",
-  胫骨近端截骨: "#6bc48a",
-  股骨四合一: "#88d4a0",
-  股骨远端验证: "#a8d4b8",
-  胫骨近端验证: "#b8e0c4",
-  股骨后方验证: "#c8e8d0",
-  截骨前: "#e09a3e",
-  截骨后: "#d4893d",
-  摆锯可视化: "#e07070",
-  胫骨中线绘制: "#d4a0e0",
-  胫骨划线: "#d4a0e0",
+  股骨注册: "#4da3ff",
+  股骨验证: "#89c4ff",
+  胫骨注册: "#12d4c4",
+  胫骨验证: "#7af0de",
+  股骨远端截骨: "#22c55e",
+  胫骨近端截骨: "#14b8a6",
+  股骨四合一: "#8b5cf6",
+  股骨远端验证: "#f5d76e",
+  胫骨近端验证: "#5eead4",
+  股骨后方验证: "#fb923c",
+  截骨前: "#ffb020",
+  截骨后: "#ff6b35",
+  摆锯可视化: "#ff4d6d",
+  胫骨中线绘制: "#e879f9",
+  胫骨划线: "#e879f9",
 };
 const L3_COLOR = {
-  采集间隙: "#f0c060",
-  标记钉采集: "#c090e0",
-  "髋/踝中心": "#8a7ec8",
+  采集间隙: "#ffe066",
+  标记钉采集: "#c084fc",
+  "髋/踝中心": "#818cf8",
 };
 const DEV_COLOR = {
-  示踪器: "#6a8aa0",
-  相机: "#5a9bb8",
-  设置: "#7a8a9a",
-  机械臂维护: "#8a9a6a",
-  EMC: "#a07070",
+  示踪器: "#2dd4bf",
+  相机: "#38bdf8",
+  设置: "#94a3b8",
+  机械臂维护: "#a3e635",
+  EMC: "#fb7185",
 };
+const LOG_COLOR = {
+  重点: "#e8b84a",
+  异常: "#ff5c5c",
+  噪声: "#5c6e82",
+  启动: "#6ec89a",
+};
+
+const LEGEND = [
+  {
+    title: "手术",
+    note: "不同手术轮换色，同 uuid 同色",
+    swatches: CASE_PALETTE,
+    items: [["未打开方案", UNKNOWN_CASE_COLOR]],
+  },
+  { title: "日志", items: Object.entries(LOG_COLOR) },
+  { title: "一级", items: Object.entries(L1_COLOR) },
+  {
+    title: "二级",
+    items: Object.entries(L2_COLOR).filter(([k]) => k !== "胫骨划线"),
+  },
+  { title: "三级", items: Object.entries(L3_COLOR) },
+  { title: "设备", items: Object.entries(DEV_COLOR) },
+];
 
 const state = {
   logs: [],
@@ -246,6 +283,26 @@ function renderLabels() {
         `<div class="nle-lab${r.ruler ? " ruler" : ""}" style="height:${r.h}px">${r.name}</div>`
     )
     .join("");
+  renderLegend();
+}
+
+function renderLegend() {
+  const el = $("nle-legend");
+  if (!el) return;
+  el.innerHTML = LEGEND.map((g) => {
+    const dots = (g.swatches || [])
+      .map((c) => `<i class="lg-swatch" style="background:${c}"></i>`)
+      .join("");
+    const items = (g.items || [])
+      .map(
+        ([name, col]) =>
+          `<div class="lg-item"><i class="lg-dot" style="background:${col}"></i><span>${name}</span></div>`
+      )
+      .join("");
+    const note = g.note ? `<p class="lg-note">${g.note}</p>` : "";
+    const extra = dots ? `<div class="lg-swatches">${dots}</div>` : "";
+    return `<section class="lg-group"><h3>${g.title}</h3>${note}${extra}${items}</section>`;
+  }).join("");
 }
 
 function lineCount() {
@@ -411,8 +468,8 @@ function drawTicks(ctx, y, h, w) {
     for (let i = a; i <= b; i++) {
       const x = xOfLine(i);
       let color = null;
-      if (anomSet.has(i)) color = "#e35d5d";
-      else if (keySet.has(i)) color = "#e0b03a";
+      if (anomSet.has(i)) color = LOG_COLOR.异常;
+      else if (keySet.has(i)) color = LOG_COLOR.重点;
       else if (showDim) color = "rgba(90,110,130,0.45)";
       if (!color) continue;
       ctx.fillStyle = color;
@@ -432,8 +489,8 @@ function drawTicks(ctx, y, h, w) {
       }
       if (keySet.has(i)) key = true;
     }
-    if (anom) ctx.fillStyle = "#e35d5d";
-    else if (key) ctx.fillStyle = "#e0b03a";
+    if (anom) ctx.fillStyle = LOG_COLOR.异常;
+    else if (key) ctx.fillStyle = LOG_COLOR.重点;
     else if (showDim) ctx.fillStyle = "rgba(90,110,130,0.28)";
     else continue;
     ctx.fillRect(px, y + 5, 1, h - 10);
