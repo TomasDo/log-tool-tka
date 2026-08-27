@@ -35,32 +35,32 @@
 
 ## 软件页面与步骤（业务顺序）
 
-时间轴按**大页面跳转**分段（方案预览、配准、导航、术中测量评估等）。页内步骤是页面下面的细项。中文名请按你们实际 UI/培训改。
+时间轴按**一级页面**分段：方案预览、准备、术中评估、导航。home page 是这四个页面共用的主窗口，不是单独一级。摆锯可视化是导航下的二级功能。
 
 | 顺序 | 软件步骤（显示名） | 源码页面/模块 | 日志中的实际名称 | 说明 |
 | --- | --- | --- | --- | --- |
 | 0 | 启动 | TKAMainWindow | Titan Application Startup | 软件启动 |
 | 1 | 登录 | TKAPageLogin | login page | 日志几乎没有登录成败，只有离开登录页 |
 | 2 | 方案管理 | TKAPageManage | plan manage page | |
-| 3 | 主页 | home page | home page | |
+| 3 | 主窗口 | home page | home page | 方案预览 / 准备 / 术中评估 / 导航 四个一级页面的主窗口 |
 | 4 | 方案预览 | TKAPlanViewer | planviewer page | 方案预览页面 |
-| 5 | 配准 | TKAFemurReg | prepare page | 设备准备步骤。页内 check = 检查配准精度 |
+| 5 | 准备 | TKAFemurReg | prepare page | 设备准备。页内 check = 检查配准精度 |
 | 5.1 | 股骨配准 | TKAFemurReg | femur register step | 股骨注册步骤（注：后续股骨/胫骨注册和股骨/胫骨配准同义） |
 | 5.2 | 股骨配准精度检查 | TKAFemurReg | femur check step | 股骨验证步骤 |
 | 5.3 | 胫骨配准 | TKAFemurReg | tibia register step | 胫骨注册步骤 |
 | 5.4 | 胫骨配准精度检查 | TKAFemurReg | tibia check step | 胫骨验证步骤 |
 | 6 | 导航 | TKARobotMotion | robot motion | 导航页面。页内 check = 工具测量实际截骨量 |
 | 6.1 | 股骨远端截骨 | TKARobotMotion | femur distal step | 股骨远端截骨 |
-| 6.2 | 胫骨截骨 | TKARobotMotion | tibia step | 胫骨近端截骨 |
-| 6.3 | 股骨后髁截骨 | TKARobotMotion | femur poster step | 股骨四合一步骤 |
+| 6.2 | 胫骨近端截骨 | TKARobotMotion | tibia step | 胫骨近端截骨 |
+| 6.3 | 股骨四合一 | TKARobotMotion | femur poster step | 股骨四合一步骤 |
 | 6.4 | 股骨远端截骨量测量 | TKARobotMotion | femur distal check step | 股骨远端验证 |
-| 6.5 | 胫骨截骨量测量 | TKARobotMotion | tibia check step | 胫骨近端验证：`switch tibia check step` |
-| 6.6 | 股骨后髁截骨量测量 | TKARobotMotion | femur poster check step | 股骨后方验证 |
-| 7 | 术中测量评估 | TKAGapMeasure | gapmeasure page | 术中评估 |
-| 8 | 导航（摆锯） | TKACutterNavigation | cutter navigation page | 摆锯可视化功能 |
+| 6.5 | 胫骨近端验证 | TKARobotMotion | tibia check step | 胫骨近端验证：`switch tibia check step` |
+| 6.6 | 股骨后方验证 | TKARobotMotion | femur poster check step | 股骨后方验证 |
+| 7 | 术中评估 | TKAGapMeasure | gapmeasure page | 术中评估 |
+| 8 | 摆锯可视化 | TKACutterNavigation | cutter navigation page | 导航下的二级功能，不是一级页面 |
 | 9 | 退出 | TKAMainWindow | Titan Application Exit | 软件退出 |
 
-台车放置：`switch cart placement left/right`，**不算关键步骤**，时间轴默认隐藏。
+台车放置：软件默认与手术同侧，同侧不显示；**与手术侧不一致时标记**。
 
 ---
 
@@ -74,19 +74,19 @@
 | Titan vesrion | contains | 软件版本 | lifecycle | show | key | 源码拼写就是 vesrion |
 | Titan Application Exit | contains | 软件退出 | lifecycle | show | key | 软件退出 |
 | from login page switch to plan manage page | contains | 登录 → 方案管理 | page | show | key | 登录成功，进入方案管理 |
-| from plan manage page switch to home page | contains | 方案管理 → 主页 | page | show | key | 打开方案成功，进入方案预览（home page是方案预览、准备、术中评估、导航这四个一级页面的主窗口） |
-| from home page switch to plan manage page | contains | 主页 → 方案管理 | page | show | key | 返回方案列表 |
+| from plan manage page switch to home page | contains | 打开方案 | page | show | key | 打开方案成功，进入主窗口（home page是方案预览、准备、术中评估、导航这四个一级页面的主窗口） |
+| from home page switch to plan manage page | contains | 返回方案管理 | page | show | key | 返回方案列表 |
 | take over planviewer page | contains | 方案预览 | page | show | key | 进入方案预览 |
-| take over prepare page | contains | 配准 | page | show | key | 进入准备（准备页面包含工具的标定校准、股骨胫骨的注册验证等） |
+| take over prepare page | contains | 准备 | page | show | key | 进入准备（准备页面包含工具的标定校准、股骨胫骨的注册验证等） |
 | robot motion take over | contains | 导航 | page | show | key | 进入导航 |
-| take over gapmeasure page | contains | 术中测量评估 | page | show | key | 进入术中评估 |
-| take over cutter navigation page | contains | 导航（摆锯） | page | show | key | 进入摆锯可视化步骤，摆锯可视化是一级导航页面下的二级功能 |
+| take over gapmeasure page | contains | 术中评估 | page | show | key | 进入术中评估 |
+| take over cutter navigation page | contains | 摆锯可视化 | step | show | key | 进入摆锯可视化步骤，摆锯可视化是一级导航页面下的二级功能 |
 | click start operation | contains | 开始手术 | step | show | key | 在方案预览页面点击开始手术按钮，进入准备页面 |
 | start load plan uuid | contains | 开始加载方案 | step | show | key | 开始加载手术方案，消息含 UUID |
 | load plan sucess | contains | 加载方案成功 | step | show | key | 方案加载成功 |
 | load ct plan sucess | contains | 加载 CT 方案成功 | step | show | key | 加载CT-base方案成功（软件主持CT-Free模式，CT-Free模式下不需要CT-base的方案，直接在方案管理页面新建方案） |
 | loaded plan | prefix | 方案植入物信息 | key | show | key | brand/series/type |
-| operation side | prefix | 手术侧/性别/年龄 | key | show | key | TODO：否 |
+| operation side | prefix | 手术侧/性别/年龄 | key | show | key | 不脱敏，原样显示 |
 | start import plan path | contains | 开始导入方案 | step | show | key | 导入方案 |
 | read plan path | contains | 读取外部方案 | step | show | none | 后续有 sucess/fail |
 | import plan path | contains | 导入方案结果 | step | show | key | |
@@ -97,14 +97,16 @@
 | switch to femur check step | contains | 股骨配准精度检查 | step | show | key | 股骨验证步骤 |
 | switch to tibia register step | contains | 胫骨配准 | step | show | key | 胫骨注册步骤 |
 | switch to tibia check step | contains | 胫骨配准精度检查 | step | show | key | 胫骨验证步骤 |
-| switch femur distal check step | contains | 股骨远端截骨量测量 | step | show | key | 股骨远端验证 |
-| switch femur poster check step | contains | 股骨后髁截骨量测量 | step | show | key | 股骨后方验证 |
+| switch femur distal check step | contains | 股骨远端验证 | step | show | key | 股骨远端验证 |
+| switch femur poster check step | contains | 股骨后方验证 | step | show | key | 股骨后方验证 |
 | switch femur distal step | contains | 股骨远端截骨 | step | show | key | 股骨远端截骨步骤 |
-| switch femur poster step | contains | 股骨后髁截骨 | step | show | key | 股骨四合一步骤（股骨安装四合一截骨板，就是为了截股骨后方） |
-| switch tibia check step | contains | 胫骨截骨量测量 | step | show | key | 胫骨近端验证 |
-| switch tibia step | contains | 胫骨截骨 | step | show | key | 胫骨近端截骨 |
-| switch cart placement left | contains | 台车放置-左 | step | hide | none | 软件默认选择和手术同侧，如果不同侧，则标记 |
-| switch cart placement right | contains | 台车放置-右 | step | hide | none | 软件默认选择和手术同侧，如果不同侧，则标记 |
+| switch femur poster step | contains | 股骨四合一 | step | show | key | 股骨四合一步骤（股骨安装四合一截骨板，就是为了截股骨后方） |
+| switch tibia check step | contains | 胫骨近端验证 | step | show | key | 胫骨近端验证 |
+| switch tibia step | contains | 胫骨近端截骨 | step | show | key | 胫骨近端截骨 |
+| switch cart placement left | contains | 台车放置-左 | step | hide | none | 默认同侧隐藏；与手术侧不一致时由工具标记 |
+| switch cart placement right | contains | 台车放置-右 | step | hide | none | 默认同侧隐藏；与手术侧不一致时由工具标记 |
+| cart teach button | contains | 台车示教 | robot | show | key | 重要操作，记录按下/松开 |
+| robot stop | contains | 机械臂停止 | robot | show | none | 记录机械臂运动停止时间 |
 | start collect gap in gapmeasure page | contains | 开始采集间隙 | step | show | key | 术中评估开始采集 |
 | finish collect gap in gapmeasure page | contains | 完成采集间隙 | step | show | key | 术中评估结束采集 |
 | cutter before in gapmeasure page | contains | 间隙测量-截前 | step | show | key | 术中评估截骨前 |
@@ -131,7 +133,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | femur register error | contains | 股骨配准误差 | key | show | key | >1 | 取消息最后一个数字，单位 mm |
 | tibia register error | contains | 胫骨配准误差 | key | show | key | >1 | |
-| arm register finish error | contains | 手臂配准误差 | key | show | key | >1 | 旧版代码，不再使用 |
+| arm register finish error | contains | 手臂配准误差 | key | hide | none | >1 | 旧版代码，不再使用 |
 | probe verify femur point | contains | 股骨点校验误差 | key | show | key | >1 | `probe verify femur point N error: x`，x 为 mm |
 | probe verify tibia point | contains | 胫骨点校验误差 | key | show | key | >1 | |
 | TKANail nail verify error | contains | 骨钉校验误差 | key | show | key | >1 | |
@@ -159,7 +161,7 @@
 | cutted before bend lateral max gap | contains | 截前屈曲外侧最大间隙 | key | show | key |  |  |
 | cutted after knee varus | contains | 截后膝内翻 | key | show | key |  |  |
 | cutted before knee varus | contains | 截前膝内翻 | key | show | key |  |  |
-| after move guider | contains | 导板到位后参数 | key | show | none |  | TODO：不上时间轴 |
+| after move guider | contains | 导板到位后参数 | key | hide | none |  | 不上时间轴 |
 | FmeurReg's marker nail wighet open | contains | 配准页骨钉权重打开 | key | show | none |  | 源码拼写 Fmeur/wighet |
 
 ---
@@ -180,7 +182,7 @@
 | import plan path .+ fail | regex | 导入方案失败 | step | show | anomaly | 异常，并记录失败原因 |
 | import brand ini fail | contains | 导入品牌 ini 失败 | other | show | anomaly | |
 | can not get | contains | 数据库缺少品牌缩写 | other | show | anomaly | 异常，并记录导入档案的品牌字段 |
-| kuka app is disconnected | contains | KUKA 断开 | robot | show | anomaly | TODO：术中断开才算异常 |
+| kuka app is disconnected | contains | KUKA 断开 | robot | show | anomaly | 仅术中（点击开始手术之后、返回方案管理/退出之前）断开才标异常；非术中隐藏 |
 
 工具实现约定（改工具时遵守）：
 
@@ -230,13 +232,11 @@
 | tibiamarker2ndi | contains | 胫骨 marker NDI | noise | hide | none | |
 | femurmarker2ct | contains | 股骨 marker→CT | noise | hide | none | |
 | tibiamarker2ct | contains | 胫骨 marker→CT | noise | hide | none | |
-| cart teach button | contains | 台车示教按钮 | noise | hide | none | TODO：重要的操作动作，需记录 |
 | TKARobotMotion recv | contains | 机器人收到指令 | noise | hide | none | |
 | TKARobotMotion end | contains | 机器人指令结束 | noise | hide | none | |
 | TKAKukaCmd send | contains | 发送 KUKA 指令 | noise | hide | none | 关键结果用步骤表，不看每条 cmd |
 | before send | contains | 发送前关节角 | noise | hide | none | |
 | before fix plane send joint | contains | 定平面前关节角 | noise | hide | none | |
-| robot stop | contains | 机器人停止类 | noise | hide | none | TODO：需记录机械臂运动停止的时间 |
 | send teach cmd and try to open hard switch | contains | 示教开硬开关 | noise | hide | none | |
 | send open soft switch cmd | contains | 开软开关 | noise | hide | none | |
 | reading handguding button | contains | 手导按钮 | noise | hide | none | |
@@ -251,9 +251,10 @@
 
 - 距离单位 mm；配准和点校验 **>1 mm** 算异常
 - 配准页 check = 检查配准精度；导航页 check = 工具测量实际截骨量
-- 时间轴按大页面分段：方案预览、配准、术中测量评估、导航等
-- 台车放置不算关键步骤
-- NDI 没连上算异常
+- 时间轴按一级页面分段：方案预览、准备、术中评估、导航（摆锯是导航下的二级）
+- 台车与手术同侧不显示，不同侧才标记
+- NDI 没连上算异常；KUKA 仅术中断开算异常
+- 台车示教、机械臂停止要记录时间
 
 ## 请你在本文件继续完善
 

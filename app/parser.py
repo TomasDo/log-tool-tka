@@ -18,6 +18,36 @@ CST = timezone(timedelta(hours=8))
 
 MAX_EVENTS_PAYLOAD = 50_000
 
+SIDE_RE = re.compile(r"operation side\s+(left|right|l|r|左|右)", re.I)
+CART_RE = re.compile(r"switch cart placement\s+(left|right)", re.I)
+START_OP = "click start operation"
+EXIT_APP = "Titan Application Exit"
+BACK_TO_PLANS = "from home page switch to plan manage"
+
+
+def _norm_side(token: str) -> str | None:
+    s = (token or "").strip().lower()
+    if s in ("left", "l", "左"):
+        return "left"
+    if s in ("right", "r", "右"):
+        return "right"
+    return None
+
+
+def _side_label(side: str) -> str:
+    return "左" if side == "left" else "右"
+
+
+def _peek_side(events: list[dict], start: int) -> str | None:
+    for ev in events[start:]:
+        msg = ev.get("message") or ""
+        if EXIT_APP in msg or BACK_TO_PLANS in msg:
+            break
+        m = SIDE_RE.search(msg)
+        if m:
+            return _norm_side(m.group(1))
+    return None
+
 
 def extract_date_from_name(name: str) -> str | None:
     m = DATE_IN_NAME.search(name)
@@ -124,9 +154,54 @@ def classify_events(events: list[dict], spec: Spec) -> list[dict]:
     spec.maybe_reload()
     current_group = ""
     current_page = ""
+    op_side = None
+    in_surgery = False
     out = []
-    for ev in events:
-        cls = spec.classify(ev.get("message") or "", ev.get("raw") or "", ev.get("level"))
+    for i, ev in enumerate(events):
+        msg = ev.get("message") or ""
+        mside = SIDE_RE.search(msg)
+        if mside:
+            op_side = _norm_side(mside.group(1))
+        if START_OP in msg:
+            in_surgery = True
+        cls = spec.classify(msg, ev.get("raw") or "", ev.get("level"))
+
+        cart = CART_RE.search(msg)
+        if cart:
+            cart_side = _norm_side(cart.group(1))
+            known = op_side or _peek_side(events, i + 1)
+            if known and cart_side and cart_side != known:
+                cls["timeline"] = "show"
+                cls["mark"] = "key"
+                cls["source"] = "context"
+                cls["step"] = (
+                    f"台车放置与手术侧不一致（台车{_side_label(cart_side)} / "
+                    f"手术{_side_label(known)}）"
+                )
+
+        if "kuka app is disconnected" in msg.lower():
+            if in_surgery:
+                cls["mark"] = "anomaly"
+                cls["timeline"] = "show"
+                cls["step"] = "KUKA 断开"
+            else:
+                cls["mark"] = "none"
+                cls["timeline"] = "hide"
+                cls["step"] = "KUKA 断开（非术中）"
+
+        # Joint dumps / send-cmd lines are noise; keep the stop event itself.
+        if "robot stop" in msg.lower() and "a1:" not in msg.lower():
+            cls["timeline"] = "show"
+            if cls.get("mark") not in ("key", "anomaly"):
+                cls["mark"] = "none"
+            cls["step"] = "机械臂停止"
+            cls["category"] = "robot"
+            cls["source"] = "context"
+
+        if EXIT_APP in msg or BACK_TO_PLANS in msg:
+            in_surgery = False
+            op_side = None
+
         step = cls["step"]
         cat = cls["category"]
         if cat == "page" and cls["timeline"] == "show" and step:
