@@ -4,7 +4,7 @@
 >
 > 工具按表格**从上到下**匹配，第一条命中即停。
 >
-> 这是初稿。步骤中文名、还要不要显示、阈值等，请你直接改本文件；工具按表生效，不必先改代码。
+> 改「软件步骤」等列即改显示名。保存后点网页「重新加载规则」，一般不必改代码。
 >
 > 标记约定：
 > - 匹配方式：`contains`（默认，子串）| `prefix` | `regex`
@@ -210,7 +210,7 @@
 | --- | --- | --- | --- |
 | E | anomaly | show | 含空消息 |
 | C | anomaly | show | |
-| W | none | show | TODO：警告是否全部显示 |
+| W | none | show | 警告默认不升为异常 |
 | I/D/T | none | 由映射表决定 | |
 
 ---
@@ -231,12 +231,12 @@
 | before tibia | contains | 胫骨运动前关节角 | noise | hide | none | |
 | before femur | contains | 股骨运动前关节角 | noise | hide | none | |
 | after robot move joint | contains | 运动后关节角 | noise | hide | none | |
-| after move guider | contains | 导板运动后数值 | noise | hide | none | 与关键信息表冲突：若你希望显示导板到位参数，从本表删掉这行 |
+| after move guider | contains | 导板运动后数值 | noise | hide | none | 机器人位姿，不是截骨验证 |
 | detect net ip | contains | 网卡 IP 探测 | noise | hide | none | |
 | BrandKnee ini is already exist | contains | 品牌 ini 已存在 | noise | hide | none | 每次启动都有 |
 | load all brand | contains | 加载全部品牌 | noise | hide | none | |
 | temp pdf dir | contains | 临时 PDF 目录 | noise | hide | none | |
-| pkill SiriusApp | contains | 结束 Sirius | noise | hide | none | TODO：Titan启动时需强制关闭Sirius，以释放NDI和KUKA的资源 |
+| pkill SiriusApp | contains | 结束 Sirius | noise | hide | none | 启动时关 Sirius 以释放 NDI/KUKA |
 | probe2femurmarker point | contains | 股骨采点坐标 | noise | hide | none | 校验误差已在关键信息里 |
 | probe2tibiamarker point | contains | 胫骨采点坐标 | noise | hide | none | |
 | probe2ndi | contains | 探针相对 NDI | noise | hide | none | |
@@ -278,11 +278,11 @@
 
 必要步骤（缺则为异常）：
 
-1. **标记钉采集**（术前）：该 uuid 行范围内出现 `marker nail wighet open`、`marker nail wigdet`、`nail verify error` 任一即可。07-16 一类日志常常只有 widget-open，没有 nail verify。
-2. **股骨验证**（股骨注册之后）：日志出现 `probe verify femur point 5` 即完成。不要对点 1..5 去重计数，不要显示 3/5。有索引 **5** 就算做完；没有点 5（或没有任何股骨验证行）为未做完。悬停可列出出现过的点号（1,2,3…），不加分数。
-3. **胫骨验证**：同样看 `probe verify tibia point 5`。
-4. **间隙采集（规划）**：截骨前 gap collect，**不是**截骨后。`start collect gap`（最好还有 `finish collect gap`）出现在 `cutter before in gapmeasure` 之后、且在 `cutter after in gapmeasure` / 首次截骨（`switch femur distal step` / tibia / poster）之前。只在截骨后采集仍算规划缺失。
-5. **截骨面参数验证**：截骨后三个面都要有 collect-check 读数（不是只进了验证步）。股骨远端（内/外侧截骨量、内外翻角、前倾角）、胫骨近端（内/外侧深度、后倾角、旋转角、内外翻角）、股骨后方（内/外侧、旋转角）。做了截骨或进了验证但缺参数 → 未做完并列出未采集名；已开始的手术即使没切没验也仍要求 → 未做。胫骨内外翻当前 Titan 从不打 `collect check tibia varus`，现有样本会显示未采集。
+1. **标记钉采集**（术前）：出现 `marker nail wighet open` / `marker nail wigdet` / `nail verify error` 任一即完成。
+2. **股骨验证**：出现 `probe verify femur point 5` 即完成。用日志里的点号 N，不要计数、不要显示 3/5。
+3. **胫骨验证**：出现 `probe verify tibia point 5` 即完成。
+4. **间隙采集（规划）**：截骨前的 `start collect gap`（在 `cutter before in gapmeasure` 之后、`cutter after` 或首次截骨之前）。截骨后采集不算规划。
+5. **截骨面参数验证**：三个面都要有 `collect check` 读数。股骨远端（内/外侧截骨量、内外翻角、前倾角）、胫骨近端（内/外侧、后倾角、旋转角、内外翻角）、股骨后方（内/外侧、旋转角）。缺参数标「未采集」。当前 Titan 不打 `collect check tibia varus`，胫骨内外翻会显示未采集。
 
 ## 已定（写在上面的表里了）
 
@@ -294,7 +294,6 @@
 - 台车示教、机械臂停止要记录时间
 - 方案汇总按 uuid 合并必要步骤；点 5 即验证完成（不计数）；规划间隙=截骨前；截骨面参数都要采集（含胫骨内外翻）
 
-## 请你在本文件继续完善
+## 维护
 
-步骤中文名、还要显示哪些、哪些改成噪声/异常，直接改表。保存后点网页「重新加载规则」。
-新增一行映射就能多一种步骤，一般不必改代码。
+改表后点「重新加载规则」。新增一行映射即可多一种步骤，一般不必改代码。截骨 Δ、方案汇总、页面分级在 `app/nle.py`，改那些规则要动代码并同步本文件。

@@ -55,6 +55,7 @@ L 为 T/D/I/W/E/C。文件名 log_file_YYYY-MM-DD.txt 会取出日期；医院�
 ## 目录
 
 - docs/titan-log-spec.md — 唯一分类配置
+- docs/sibling-log-tool-brief.md — 给另一产品做同类日志分析工具的构建说明
 - app/ — 解析器与 HTTP 服务
 - web/ — 静态页面（无构建步骤）
 - data/ — 导入副本与索引（已 gitignore）
