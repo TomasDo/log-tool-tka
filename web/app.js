@@ -1166,23 +1166,43 @@ function bindTerm() {
 
 function bindSplit() {
   const split = $("split");
+  const term = $("term-wrap");
+  const workspace = $("workspace");
   const nle = $("nle");
+  const applyTermH = (h) => {
+    nle.style.flex = "";
+    nle.style.height = "";
+    term.style.flex = `0 0 ${h}px`;
+    term.style.height = `${h}px`;
+    queueDraw();
+  };
+  const maxTerm = () => {
+    const ws = workspace.getBoundingClientRect().height;
+    const splitH = split.getBoundingClientRect().height || 8;
+    return Math.max(64, ws - splitH - 200);
+  };
   split.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
     ev.preventDefault();
+    split.setPointerCapture(ev.pointerId);
     const startY = ev.clientY;
-    const startH = nle.getBoundingClientRect().height;
+    const startH = term.getBoundingClientRect().height;
     const move = (e) => {
-      const dy = startY - e.clientY;
-      nle.style.flex = "none";
-      nle.style.height = `${clamp(startH + dy, 280, 900)}px`;
-      queueDraw();
+      applyTermH(clamp(startH + (e.clientY - startY), 64, maxTerm()));
     };
     const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+      split.removeEventListener("pointermove", move);
+      split.removeEventListener("pointerup", up);
+      split.removeEventListener("pointercancel", up);
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    split.addEventListener("pointermove", move);
+    split.addEventListener("pointerup", up);
+    split.addEventListener("pointercancel", up);
+  });
+  window.addEventListener("resize", () => {
+    const h = term.getBoundingClientRect().height;
+    const mx = maxTerm();
+    if (h > mx) applyTermH(mx);
   });
 }
 

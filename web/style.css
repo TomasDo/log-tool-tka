@@ -281,6 +281,12 @@ h1 { font-size: 16px; margin: 0; font-weight: 650; }
   height: 8px; flex-shrink: 0; cursor: row-resize;
   background: linear-gradient(var(--bg), var(--bg));
   position: relative;
+  touch-action: none;
+  z-index: 2;
+}
+#split::before {
+  content: "";
+  position: absolute; left: 0; right: 0; top: -5px; bottom: -5px;
 }
 #split::after {
   content: "";
@@ -288,10 +294,11 @@ h1 { font-size: 16px; margin: 0; font-weight: 650; }
   width: 42px; height: 2px; margin-left: -21px;
   border-radius: 2px; background: #3a516c;
 }
+#split:hover::after, #split:active::after { background: var(--accent); }
 
 #nle {
   flex: 1;
-  min-height: 380px;
+  min-height: 200px;
   height: auto;
   display: flex; flex-direction: column;
   background: #121a22;
