@@ -4,7 +4,7 @@ const LINE_H = 18;
 const RULER_H = 22;
 const MAX_SCALE = 2;
 const TRACKS = [
-  { key: "cases", name: "手术", h: 42 },
+  { key: "cases", name: "手术", h: 54 },
   { key: "log", name: "日志", h: 26 },
   { key: "l1", name: "一级", h: 30 },
   { key: "l2", name: "二级", h: 26 },
@@ -349,7 +349,9 @@ function drawFlag(ctx, x, y, version) {
     const tw = Math.ceil(ctx.measureText(version).width) + 8;
     let bx = x + 13;
     const vw = $("nle-canvas").clientWidth;
-    if (bx + tw > vw - 4) bx = x - tw - 4;
+    if (bx + tw > vw - 4) {
+      bx = x > vw * 0.55 ? x - tw - 4 : Math.max(0, vw - tw - 4);
+    }
     ctx.fillStyle = "#163328";
     roundRect(ctx, bx, y, tw, 13, 3);
     ctx.fill();
@@ -474,41 +476,76 @@ function drawSpans(ctx, spans, y, h, colorFn, trackKey) {
   }
 }
 
+function fullCaseLabel(s) {
+  if (!s.uuid) return "未打开方案";
+  if (s.restart) return `#${s.n} 重启`;
+  return s.case_label || s.label || "手术";
+}
+
+function compactCaseLabel(s) {
+  if (!s.uuid) return "未开";
+  if (s.restart) return `#${s.n}`;
+  const n = s.case_n || s.n;
+  return n ? `手术${n}` : "手术";
+}
+
+function pickCaseLabel(ctx, s, maxW) {
+  if (maxW < 10) return "";
+  const full = fullCaseLabel(s);
+  if (ctx.measureText(full).width <= maxW) return full;
+  const compact = compactCaseLabel(s);
+  if (ctx.measureText(compact).width <= maxW) return compact;
+  return ellipsize(ctx, compact, maxW);
+}
+
 function drawCases(ctx, y, h, w) {
   const sessions = ((state.data && state.data.tracks) || {}).sessions || [];
-  const gap = 3;
-  ctx.font = "11px ui-sans-serif, sans-serif";
-  for (const s of sessions) {
-    const { x, w: rawW } = spanRect(s);
-    const barW = Math.max(2, rawW - gap);
+  const labelH = 15;
+  const barY = y + labelH + 1;
+  const barH = Math.max(10, h - labelH - 6);
+  ctx.font = "10px ui-sans-serif, sans-serif";
+  for (let i = 0; i < sessions.length; i++) {
+    const s = sessions[i];
+    const x = xOfLine(s.start);
+    const endX = xOfLine(s.end + 1);
+    const nextX = i + 1 < sessions.length ? xOfLine(sessions[i + 1].start) : w + 8;
+    let barW = Math.max(3, endX - x);
+    if (x + barW > nextX - 1) barW = Math.max(2, nextX - 1 - x);
     if (x + barW < 0 || x > w) continue;
     const col = s.color || (s.uuid ? "#4e79a7" : "#5a6570");
     ctx.fillStyle = col;
-    roundRect(ctx, x, y + 5, barW, h - 10, 3);
+    roundRect(ctx, x, barY, barW, barH, 3);
     ctx.fill();
-    ctx.fillStyle = "rgba(0,0,0,0.22)";
-    ctx.fillRect(x, y + 5, Math.min(2, barW), h - 10);
-    const label = s.restart
-      ? `#${s.n} 重启`
-      : s.case_label || s.label || "未打开方案";
-    if (barW >= 22) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x + 4, y + 5, barW - 8, h - 10);
-      ctx.clip();
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.fillText(ellipsize(ctx, label, barW - 10), x + 6, y + h / 2 + 4);
-      ctx.restore();
+    if (!s.uuid) {
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      for (let px = x; px < x + barW; px += 4) {
+        ctx.fillRect(px, barY, 1.5, barH);
+      }
     }
+    ctx.fillStyle = "rgba(14,20,27,0.85)";
+    ctx.fillRect(x + barW - 1, barY, 1, barH);
     state.hits.push({
       type: "span",
       track: "cases",
       span: s,
       x,
-      y: y + 5,
+      y: barY,
       w: barW,
-      h: h - 10,
+      h: barH,
     });
+  }
+  let prevEnd = -1e9;
+  for (let i = 0; i < sessions.length; i++) {
+    const s = sessions[i];
+    const x = Math.max(0, xOfLine(s.start));
+    const nextX = i + 1 < sessions.length ? xOfLine(sessions[i + 1].start) : w;
+    const maxW = Math.max(0, Math.min(nextX, w) - x - 3);
+    if (maxW < 10 || x + 2 < prevEnd) continue;
+    const label = pickCaseLabel(ctx, s, maxW);
+    if (!label) continue;
+    ctx.fillStyle = "rgba(230,238,246,0.92)";
+    ctx.fillText(label, x + 1, y + 12);
+    prevEnd = x + 1 + ctx.measureText(label).width;
   }
 }
 
@@ -583,7 +620,9 @@ function drawNle() {
     ctx.setLineDash([]);
   }
 
-  const pins = uniqueStartups(tracks.markers);
+  const pins = uniqueStartups(tracks.markers).slice().sort((a, b) => a.line - b.line);
+  let badgeRight = -1e9;
+  ctx.font = "10px ui-sans-serif, sans-serif";
   for (const pin of pins) {
     const x = xOfLine(pin.line) + state.scale * 0.5;
     ctx.strokeStyle = "rgba(110,200,154,0.7)";
@@ -594,7 +633,16 @@ function drawNle() {
     ctx.lineTo(x, h);
     ctx.stroke();
     ctx.setLineDash([]);
-    const r1 = drawFlag(ctx, x, 2, pin.version);
+    let ver = pin.version || "";
+    let right = x + 12;
+    if (ver) {
+      const tw = Math.ceil(ctx.measureText(ver).width) + 8;
+      const bx = x + 13;
+      if (bx < badgeRight + 8) ver = "";
+      else right = bx + tw;
+    }
+    const r1 = drawFlag(ctx, x, 2, ver);
+    if (ver) badgeRight = right;
     state.hits.push({ type: "pin", pin, ...r1 });
   }
 
@@ -771,7 +819,8 @@ function tipHtml(hit) {
     return `启动${p.version ? "  " + p.version : ""}\n行 ${p.line}` + (p.t ? `  ${p.t}` : "");
   }
   const s = hit.span;
-  return `${s.label}\n行 ${s.start}–${s.end}` + (s.t0 ? `\n${s.t0} – ${s.t1 || ""}` : "");
+  const name = hit.track === "cases" ? fullCaseLabel(s) : s.label;
+  return `${name}\n行 ${s.start}–${s.end}` + (s.t0 ? `\n${s.t0} – ${s.t1 || ""}` : "");
 }
 
 function bindNle() {
