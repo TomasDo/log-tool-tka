@@ -845,17 +845,8 @@ function bindNle() {
   cv.addEventListener("wheel", (ev) => {
     if (!state.data) return;
     ev.preventDefault();
-    const rect = cv.getBoundingClientRect();
-    const x = ev.clientX - rect.left;
-    if (ev.shiftKey) {
-      state.scrollX = clamp(state.scrollX + ev.deltaY, 0, maxScroll());
-    } else {
-      const factor = ev.deltaY < 0 ? 1.18 : 1 / 1.18;
-      const line = (x + state.scrollX) / state.scale;
-      const ns = clamp(state.scale * factor, minScale(), MAX_SCALE);
-      state.scale = ns;
-      state.scrollX = clamp(line * ns - x, 0, maxScroll());
-    }
+    const dx = ev.deltaX || ev.deltaY;
+    state.scrollX = clamp(state.scrollX + dx, 0, maxScroll());
     queueDraw();
   }, { passive: false });
 
@@ -865,10 +856,9 @@ function bindNle() {
     const rect = cv.getBoundingClientRect();
     const x = ev.clientX - rect.left;
     const y = ev.clientY - rect.top;
-    const phx = xOfLine(state.playhead) + state.scale * 0.5;
-    const nearPh = Math.abs(x - phx) <= 7 || y <= RULER_H;
+    cv.classList.add("dragging");
     state.drag = {
-      kind: nearPh ? "play" : "pan",
+      kind: "pan",
       x0: x,
       y0: y,
       sx: state.scrollX,
@@ -884,12 +874,8 @@ function bindNle() {
     if (state.drag) {
       const dx = x - state.drag.x0;
       if (Math.abs(dx) > 3) state.drag.moved = true;
-      if (state.drag.kind === "play") {
-        setPlayhead(lineAtX(x));
-      } else {
-        state.scrollX = clamp(state.drag.sx - dx, 0, maxScroll());
-        queueDraw();
-      }
+      state.scrollX = clamp(state.drag.sx - dx, 0, maxScroll());
+      queueDraw();
       tip.hidden = true;
       return;
     }
@@ -903,7 +889,7 @@ function bindNle() {
       cv.style.cursor = "pointer";
     } else {
       tip.hidden = true;
-      cv.style.cursor = "crosshair";
+      cv.style.cursor = "grab";
     }
   });
 
@@ -914,6 +900,7 @@ function bindNle() {
     const y = ev.clientY - rect.top;
     const d = state.drag;
     state.drag = null;
+    cv.classList.remove("dragging");
     if (!d.moved) {
       if (d.hit && d.hit.type === "span") setPlayhead(d.hit.span.start);
       else if (d.hit && d.hit.type === "pin") setPlayhead(d.hit.pin.line);
@@ -924,6 +911,7 @@ function bindNle() {
   cv.addEventListener("pointerup", endDrag);
   cv.addEventListener("pointercancel", () => {
     state.drag = null;
+    cv.classList.remove("dragging");
   });
 
   ov.addEventListener("pointerdown", (ev) => {
@@ -999,7 +987,8 @@ function bindSplit() {
     const startH = nle.getBoundingClientRect().height;
     const move = (e) => {
       const dy = startY - e.clientY;
-      nle.style.height = `${clamp(startH + dy, 160, 520)}px`;
+      nle.style.flex = "none";
+      nle.style.height = `${clamp(startH + dy, 220, 720)}px`;
       queueDraw();
     };
     const up = () => {
