@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Titan 日志分析</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <header class="side-head">
+        <div class="brand">
+          <span class="logo">TKA</span>
+          <div>
+            <h1>Titan 日志分析</h1>
+            <p class="sub">规则来自 docs/titan-log-spec.md</p>
+          </div>
+        </div>
+        <label class="upload-btn">
+          导入日志
+          <input id="file-input" type="file" multiple accept=".txt,.log,text/plain" />
+        </label>
+        <p id="upload-status" class="hint"></p>
+      </header>
+      <ul id="file-list"></ul>
+      <footer class="side-foot">
+        <button id="reload-spec" type="button">重新加载规则</button>
+        <span id="spec-info"></span>
+      </footer>
+    </aside>
+    <main id="main">
+      <div id="empty-state">
+        <h2>选择或导入一份日志</h2>
+        <p>一次只查看一个文件。时间轴默认隐藏噪声与未映射行，规则可在 spec 文件中修改。</p>
+      </div>
+      <section id="timeline-wrap" hidden>
+        <header id="tl-head">
+          <div>
+            <h2 id="tl-title"></h2>
+            <p id="tl-meta"></p>
+          </div>
+          <div id="counts"></div>
+        </header>
+        <div id="tl-toolbar">
+          <label><input type="checkbox" id="tog-noise" /> 显示噪声</label>
+          <label><input type="checkbox" id="tog-all" /> 显示全部</label>
+          <span id="return-count"></span>
+        </div>
+        <div id="timeline"></div>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
